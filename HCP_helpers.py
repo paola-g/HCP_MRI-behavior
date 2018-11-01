@@ -1399,21 +1399,21 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             # compute network statistic for each subject in training
             strength_pos = filtered_pos.sum(axis=1)
             strength_neg = filtered_neg.sum(axis=1)
+            strength_posneg = strength_pos - strength_neg
             # compute network statistic for test subjects
             str_pos_test = edges[np.ix_(test_index,idx_filtered_pos)].sum(axis=1)
             str_neg_test = edges[np.ix_(test_index,idx_filtered_neg)].sum(axis=1)
+            str_posneg_test = str_pos_test - str_neg_test
             # regression
-            print strength_pos.reshape(-1,1).shape
-            print strength_neg.reshape(-1,1).shape
-            print np.stack((strength_pos,strength_neg),axis=1).shape
-            print np.stack((str_pos_test,str_neg_test),axis=1).shape
             lr_posneg           = lr.fit(np.stack((strength_pos,strength_neg),axis=1),score[train_index])
             predictions_posneg  = lr_posneg.predict(np.stack((str_pos_test,str_neg_test),axis=1))
+            lr_pos_neg          = lr.fit(strength_posneg.reshape(-1,1),score[train_index])
+            predictions_pos_neg = lr_posneg.predict(str_posneg_test.reshape(-1,1))
             lr_pos              = lr.fit(strength_pos.reshape(-1,1),score[train_index])
             predictions_pos     = lr_pos.predict(str_pos_test.reshape(-1,1))
             lr_neg              = lr.fit(strength_neg.reshape(-1,1),score[train_index])
             predictions_neg     = lr_neg.predict(str_neg_test.reshape(-1,1))
-            results = {'score':score[test_index],'pred_posneg':predictions_posneg, 'pred_pos':predictions_pos, 'pred_neg':predictions_neg,'idx_filtered_pos':idx_filtered_pos, 'idx_filtered_neg':idx_filtered_neg}
+            results = {'score':score[test_index],'pred_posneg':predictions_posneg,'pred_pos_neg':predictions_pos_neg, 'pred_pos':predictions_pos, 'pred_neg':predictions_neg,'idx_filtered_pos':idx_filtered_pos, 'idx_filtered_neg':idx_filtered_neg}
             print 'saving results'
             sio.savemat(outFile,results)
         
