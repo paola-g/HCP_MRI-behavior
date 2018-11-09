@@ -30,11 +30,11 @@ class config(object):
 # IMPORTS
 #----------------------------------
 # Force matplotlib to not use any Xwindows backend.
-import matplotlib
+#import matplotlib
 # core dump with matplotlib 2.0.0; use earlier version, e.g. 1.5.3
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
+#matplotlib.use('Agg')
+#import matplotlib.pyplot as plt
+#import matplotlib.image as mpimg
 import pandas as pd
 import os.path as op
 from os import mkdir, makedirs, getcwd, remove, listdir, environ
@@ -66,20 +66,77 @@ import os
 import glob
 from statsmodels.nonparametric.smoothers_lowess import lowess
 import seaborn as sns
-
+import nistats
+from nistats import design_matrix
 
 #----------------------------------
 # path following directory structure of HCP data
 #----------------------------------
 def buildpath():
-    return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
+    #return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
+    return op.join(config.DATADIR)
 
 
+#----------------------------------
+# EVs for task regression
+#----------------------------------
+# Selected as in Elliot et al. (2018)
+path = '/data/pgaldi/tfMRI/'
+config.EVs = {
+    'gambling' : {
+        'win_event' : np.loadtxt(path+'EVs/win_event.txt'),
+        'loss_event' : np.loadtxt(path+'EVs/loss_event.txt'),
+        'neut_event' : np.loadtxt(path+'EVs/neut_event.txt'),
+    }
+    'workingMemory' : {
+        '0bk_body.txt' : np.loadtxt(path+'EVs/0bk_body.txt')
+        '0bk_faces.txt' : np.loadtxt(path+'EVs/0bk_faces.txt')
+        '0bk_places.txt' : np.loadtxt(path+'EVs/0bk_places.txt')
+        '0bk_tools.txt' : np.loadtxt(path+'EVs/0bk_tools.txt')
+        '2bk_body.txt' : np.loadtxt(path+'EVs/2bk_body.txt')
+        '2bk_faces.txt' : np.loadtxt(path+'EVs/2bk_faces.txt')
+        '2bk_places.txt' : np.loadtxt(path+'EVs/2bk_places.txt')
+        '2bk_tools.txt' : np.loadtxt(path+'EVs/2bk_tools.txt')
+    }
+    'motor' : {
+        'cue' : np.loadtxt(path+'EVs/cue.txt'),
+        'lf' : np.loadtxt(path+'EVs/lf.txt'),
+        'rf' : np.loadtxt(path+'EVs/rf.txt'),
+        'lh' : np.loadtxt(path+'EVs/lh.txt'),
+        'rh' : np.loadtxt(path+'EVs/rh.txt'),
+        't' : np.loadtxt(path+'EVs/t.txt'),
+    }
+    'language' : {
+        'cue.txt' : np.loadtxt(path+'EVs/cue.txt')
+        'present_math.txt' : np.loadtxt(path+'EVs/present_math.txt')
+        'question_math.txt' : np.loadtxt(path+'EVs/question_math.txt')
+        'response_math.txt' : np.loadtxt(path+'EVs/response_math.txt')
+        'present_story.txt' : np.loadtxt(path+'EVs/present_story.txt')
+        'question_story.txt' : np.loadtxt(path+'EVs/question_story.txt')
+        'response_story.txt' : np.loadtxt(path+'EVs/response_story.txt')
+    }
+    'socialCognition' : {
+        'mental' : np.loadtxt(path+'EVs/mental.txt'),
+        'rnd' : np.loadtxt(path+'EVs/rnd.txt'),
+    }
+    'relationalProcessing' : {
+        'match' : np.loadtxt(path+'EVs/match.txt'),
+        'relation' : np.loadtxt(path+'EVs/relation.txt'),
+        'error' : np.loadtxt(path+'EVs/error.txt'), # might be empty
+    }
+    'emotionProcessing' : {
+        'fear' : np.loadtxt(path+'EVs/fear.txt'),
+        'neut' : np.loadtxt(path+'EVs/neut.txt'),
+    }
+}
 #----------------------------------
 # 3 alternate denoising pipelines
 # many more can be implemented
 #----------------------------------
 config.operationDict = {
+    'Task': [ #test task regression
+        ['TaskRegression',  1, ['gambling']]
+        ],
     'A': [ #Finn et al. 2015
         ['VoxelNormalization',      1, ['zscore']],
         ['Detrending',              2, ['legendre', 3, 'WMCSF']],
@@ -264,8 +321,10 @@ def makeTissueMasks(overwrite=False):
     GMmaskFileout = op.join(buildpath(), 'GMmask.nii')
     if not op.isfile(GMmaskFileout) or overwrite:
         # load ribbon.nii.gz and wmparc.nii.gz
-        ribbonFilein = op.join(config.DATADIR, config.subject, 'MNINonLinear','ribbon.nii.gz')
-        wmparcFilein = op.join(config.DATADIR, config.subject, 'MNINonLinear', 'wmparc.nii.gz')
+        #ribbonFilein = op.join(config.DATADIR, config.subject, 'MNINonLinear','ribbon.nii.gz')
+        #wmparcFilein = op.join(config.DATADIR, config.subject, 'MNINonLinear', 'wmparc.nii.gz')
+        ribbonFilein = op.join(buildpath(),'ribbon.nii.gz')
+        wmparcFilein = op.join(buildpath(), 'wmparc.nii.gz')
         # make sure it is resampled to the same space as the functional run
         ribbonFileout = op.join(buildpath(), 'ribbon.nii.gz')
         wmparcFileout = op.join(buildpath(), 'wmparc.nii.gz')
@@ -617,6 +676,22 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
 
 # ---------------------
 # Pipeline Operations
+def TaskRegression(niiImg, flavor, masks, imgInfo):
+    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    trials = config.EVs[flavor[0]]
+    frame_times = np.arange(nTRs) * TR
+    d = {
+        'onset' : np.hstack([trials[k][:,0] for k in trials.keys()]),
+        'trial_type' : np.hstack([np.tile(k, len(trials[k])) for k in trials.keys()]),
+        'duration' : np.hstack([trials[k][:,1] for k in trials.keys()]),
+        'modulation' : np.hstack([trials[k][:,2] for k in trials.keys()])
+    }
+    df = pd.DataFrame(data=d)
+    DM = design_matrix.make_first_level_design_matrix(frame_times=frame_times, events=df, 
+                    hrf_model='fir', drift_model=None, oversampling=1)
+    DM = DM.drop(labels=['constant'],axis=1)
+    return np.array(DM)
+
 def MotionRegression(niiImg, flavor, masks, imgInfo):
     # assumes that data is organized as in the HCP
     motionFile = op.join(buildpath(), config.movementRegressorsFile)
