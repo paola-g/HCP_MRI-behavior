@@ -83,22 +83,22 @@ def buildpath():
 # Selected as in Elliot et al. (2018)
 path = '/data/pgaldi/tfMRI/'
 config.EVs = {
-    'gambling' : {
+    'GAMBLING' : {
         'win_event' : np.loadtxt(path+'EVs/win_event.txt'),
         'loss_event' : np.loadtxt(path+'EVs/loss_event.txt'),
         'neut_event' : np.loadtxt(path+'EVs/neut_event.txt'),
     }
-    'workingMemory' : {
-        '0bk_body.txt' : np.loadtxt(path+'EVs/0bk_body.txt')
-        '0bk_faces.txt' : np.loadtxt(path+'EVs/0bk_faces.txt')
-        '0bk_places.txt' : np.loadtxt(path+'EVs/0bk_places.txt')
-        '0bk_tools.txt' : np.loadtxt(path+'EVs/0bk_tools.txt')
-        '2bk_body.txt' : np.loadtxt(path+'EVs/2bk_body.txt')
-        '2bk_faces.txt' : np.loadtxt(path+'EVs/2bk_faces.txt')
-        '2bk_places.txt' : np.loadtxt(path+'EVs/2bk_places.txt')
-        '2bk_tools.txt' : np.loadtxt(path+'EVs/2bk_tools.txt')
+    'WM' : {
+        '0bk_body' : np.loadtxt(path+'EVs/0bk_body.txt')
+        '0bk_faces' : np.loadtxt(path+'EVs/0bk_faces.txt')
+        '0bk_places' : np.loadtxt(path+'EVs/0bk_places.txt')
+        '0bk_tools' : np.loadtxt(path+'EVs/0bk_tools.txt')
+        '2bk_body' : np.loadtxt(path+'EVs/2bk_body.txt')
+        '2bk_faces' : np.loadtxt(path+'EVs/2bk_faces.txt')
+        '2bk_places' : np.loadtxt(path+'EVs/2bk_places.txt')
+        '2bk_tools' : np.loadtxt(path+'EVs/2bk_tools.txt')
     }
-    'motor' : {
+    'MOTOR' : {
         'cue' : np.loadtxt(path+'EVs/cue.txt'),
         'lf' : np.loadtxt(path+'EVs/lf.txt'),
         'rf' : np.loadtxt(path+'EVs/rf.txt'),
@@ -106,25 +106,25 @@ config.EVs = {
         'rh' : np.loadtxt(path+'EVs/rh.txt'),
         't' : np.loadtxt(path+'EVs/t.txt'),
     }
-    'language' : {
-        'cue.txt' : np.loadtxt(path+'EVs/cue.txt')
-        'present_math.txt' : np.loadtxt(path+'EVs/present_math.txt')
-        'question_math.txt' : np.loadtxt(path+'EVs/question_math.txt')
-        'response_math.txt' : np.loadtxt(path+'EVs/response_math.txt')
-        'present_story.txt' : np.loadtxt(path+'EVs/present_story.txt')
-        'question_story.txt' : np.loadtxt(path+'EVs/question_story.txt')
-        'response_story.txt' : np.loadtxt(path+'EVs/response_story.txt')
+    'LANGUAGE' : {
+        'cue' : np.loadtxt(path+'EVs/cue.txt')
+        'present_math' : np.loadtxt(path+'EVs/present_math.txt')
+        'question_math' : np.loadtxt(path+'EVs/question_math.txt')
+        'response_math' : np.loadtxt(path+'EVs/response_math.txt')
+        'present_story' : np.loadtxt(path+'EVs/present_story.txt')
+        'question_story' : np.loadtxt(path+'EVs/question_story.txt')
+        'response_story' : np.loadtxt(path+'EVs/response_story.txt')
     }
-    'socialCognition' : {
+    'SOCIAL' : {
         'mental' : np.loadtxt(path+'EVs/mental.txt'),
         'rnd' : np.loadtxt(path+'EVs/rnd.txt'),
     }
-    'relationalProcessing' : {
+    'RELATIONAL' : {
         'match' : np.loadtxt(path+'EVs/match.txt'),
         'relation' : np.loadtxt(path+'EVs/relation.txt'),
         'error' : np.loadtxt(path+'EVs/error.txt'), # might be empty
     }
-    'emotionProcessing' : {
+    'EMOTION' : {
         'fear' : np.loadtxt(path+'EVs/fear.txt'),
         'neut' : np.loadtxt(path+'EVs/neut.txt'),
     }
@@ -135,7 +135,7 @@ config.EVs = {
 #----------------------------------
 config.operationDict = {
     'Task': [ #test task regression
-        ['TaskRegression',  1, ['gambling']]
+        ['TaskRegression',  1, []]
         ],
     'A': [ #Finn et al. 2015
         ['VoxelNormalization',      1, ['zscore']],
@@ -145,6 +145,16 @@ config.operationDict = {
         ['TemporalFiltering',       5, ['Gaussian', 1]],
         ['Detrending',              6, ['legendre', 3 ,'GM']],
         ['GlobalSignalRegression',  7, ['GS']]
+        ],
+    'A0': [ #Finn et al. 2015 + Task regression
+        ['VoxelNormalization',      1, ['zscore']],
+        ['Detrending',              2, ['legendre', 3, 'WMCSF']],
+        ['TissueRegression',        3, ['WMCSF', 'GM']],
+        ['MotionRegression',        4, ['R dR']],
+        ['TemporalFiltering',       5, ['Gaussian', 1]],
+        ['Detrending',              6, ['legendre', 3 ,'GM']],
+        ['GlobalSignalRegression',  7, ['GS']]
+        ['TaskRegression',          8, []]
         ],
     'B': [ #Satterthwaite et al. 2013 (Ciric7)
         ['VoxelNormalization',      1, ['demean']],
