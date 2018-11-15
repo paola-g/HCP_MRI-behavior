@@ -83,6 +83,7 @@ def buildpath():
 #----------------------------------
 # Selected as in Elliot et al. (2018)
 def get_EVs(path,task):
+    EVs = {}
     if task == 'GAMBLING' : EVs = {
         'win_event' : np.loadtxt(op.join(path,'EVs','win_event.txt')),
         'loss_event' : np.loadtxt(op.join(path,'EVs','loss_event.txt')),
@@ -128,7 +129,7 @@ def get_EVs(path,task):
         'fear' : np.loadtxt(op.join(path,'EVs','fear.txt')),
         'neut' : np.loadtxt(op.join(path,'EVs','neut.txt')),
     }
-return EVs
+    return EVs
 
 #----------------------------------
 # 3 alternate denoising pipelines
@@ -154,8 +155,8 @@ config.operationDict = {
         ['MotionRegression',        4, ['R dR']],
         ['TemporalFiltering',       5, ['Gaussian', 1]],
         ['Detrending',              6, ['legendre', 3 ,'GM']],
-        ['GlobalSignalRegression',  7, ['GS']]
-        ['TaskRegression',          8, []]
+        ['GlobalSignalRegression',  7, ['GS']],
+        ['TaskRegression',          8, []],
         ],
     'B': [ #Satterthwaite et al. 2013 (Ciric7)
         ['VoxelNormalization',      1, ['demean']],
@@ -690,7 +691,7 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
 # Pipeline Operations
 def TaskRegression(niiImg, flavor, masks, imgInfo):
     nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
-    trials = config.EVs[flavor[0]]
+    trials = get_EVs(buildpath(), flavor[0])
     frame_times = np.arange(nTRs) * TR
     d = {
         'onset' : np.hstack([trials[k][:,0] for k in trials.keys()]),
