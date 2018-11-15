@@ -21,6 +21,7 @@ class config(object):
     useNative          = False
     parcellationName   = ''
     parcellationFile   = ''
+    outDir             = ''
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -70,7 +71,7 @@ import nistats
 from nistats import design_matrix
 
 #----------------------------------
-# path following directory structure of HCP data
+# function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
     #return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
@@ -81,54 +82,54 @@ def buildpath():
 # EVs for task regression
 #----------------------------------
 # Selected as in Elliot et al. (2018)
-path = '/data/pgaldi/tfMRI/'
-config.EVs = {
-    'GAMBLING' : {
-        'win_event' : np.loadtxt(path+'EVs/win_event.txt'),
-        'loss_event' : np.loadtxt(path+'EVs/loss_event.txt'),
-        'neut_event' : np.loadtxt(path+'EVs/neut_event.txt'),
+def get_EVs(path,task):
+    if task == 'GAMBLING' : EVs = {
+        'win_event' : np.loadtxt(op.join(path,'EVs','win_event.txt')),
+        'loss_event' : np.loadtxt(op.join(path,'EVs','loss_event.txt')),
+        'neut_event' : np.loadtxt(op.join(path,'EVs','neut_event.txt')),
     }
-    'WM' : {
-        '0bk_body' : np.loadtxt(path+'EVs/0bk_body.txt')
-        '0bk_faces' : np.loadtxt(path+'EVs/0bk_faces.txt')
-        '0bk_places' : np.loadtxt(path+'EVs/0bk_places.txt')
-        '0bk_tools' : np.loadtxt(path+'EVs/0bk_tools.txt')
-        '2bk_body' : np.loadtxt(path+'EVs/2bk_body.txt')
-        '2bk_faces' : np.loadtxt(path+'EVs/2bk_faces.txt')
-        '2bk_places' : np.loadtxt(path+'EVs/2bk_places.txt')
-        '2bk_tools' : np.loadtxt(path+'EVs/2bk_tools.txt')
+    if task == 'WM' : EVs = {
+        '0bk_body' : np.loadtxt(op.join(path,'EVs','0bk_body.txt')),
+        '0bk_faces' : np.loadtxt(op.join(path,'EVs','0bk_faces.txt')),
+        '0bk_places' : np.loadtxt(op.join(path,'EVs','0bk_places.txt')),
+        '0bk_tools' : np.loadtxt(op.join(path,'EVs','0bk_tools.txt')),
+        '2bk_body' : np.loadtxt(op.join(path,'EVs','2bk_body.txt')),
+        '2bk_faces' : np.loadtxt(op.join(path,'EVs','2bk_faces.txt')),
+        '2bk_places' : np.loadtxt(op.join(path,'EVs','2bk_places.txt')),
+        '2bk_tools' : np.loadtxt(op.join(path,'EVs','2bk_tools.txt')),
     }
-    'MOTOR' : {
-        'cue' : np.loadtxt(path+'EVs/cue.txt'),
-        'lf' : np.loadtxt(path+'EVs/lf.txt'),
-        'rf' : np.loadtxt(path+'EVs/rf.txt'),
-        'lh' : np.loadtxt(path+'EVs/lh.txt'),
-        'rh' : np.loadtxt(path+'EVs/rh.txt'),
-        't' : np.loadtxt(path+'EVs/t.txt'),
+    if task == 'MOTOR' : EVs = {
+        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt')),
+        'lf' : np.loadtxt(op.join(path,'EVs','lf.txt')),
+        'rf' : np.loadtxt(op.join(path,'EVs','rf.txt')),
+        'lh' : np.loadtxt(op.join(path,'EVs','lh.txt')),
+        'rh' : np.loadtxt(op.join(path,'EVs','rh.txt')),
+        't' : np.loadtxt(op.join(path,'EVs','t.txt')),
     }
-    'LANGUAGE' : {
-        'cue' : np.loadtxt(path+'EVs/cue.txt')
-        'present_math' : np.loadtxt(path+'EVs/present_math.txt')
-        'question_math' : np.loadtxt(path+'EVs/question_math.txt')
-        'response_math' : np.loadtxt(path+'EVs/response_math.txt')
-        'present_story' : np.loadtxt(path+'EVs/present_story.txt')
-        'question_story' : np.loadtxt(path+'EVs/question_story.txt')
-        'response_story' : np.loadtxt(path+'EVs/response_story.txt')
+    if task == 'LANGUAGE' : EVs = {
+        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt')),
+        'present_math' : np.loadtxt(op.join(path,'EVs','present_math.txt')),
+        'question_math' : np.loadtxt(op.join(path,'EVs','question_math.txt')),
+        'response_math' : np.loadtxt(op.join(path,'EVs','response_math.txt')),
+        'present_story' : np.loadtxt(op.join(path,'EVs','present_story.txt')),
+        'question_story' : np.loadtxt(op.join(path,'EVs','question_story.txt')),
+        'response_story' : np.loadtxt(op.join(path,'EVs','response_story.txt')),
     }
-    'SOCIAL' : {
-        'mental' : np.loadtxt(path+'EVs/mental.txt'),
-        'rnd' : np.loadtxt(path+'EVs/rnd.txt'),
+    if task == 'SOCIAL' : EVs = {
+        'mental' : np.loadtxt(op.join(path,'EVs','mental.txt')),
+        'rnd' : np.loadtxt(op.join(path,'EVs','rnd.txt')),
     }
-    'RELATIONAL' : {
-        'match' : np.loadtxt(path+'EVs/match.txt'),
-        'relation' : np.loadtxt(path+'EVs/relation.txt'),
-        'error' : np.loadtxt(path+'EVs/error.txt'), # might be empty
+    if task == 'RELATIONAL' : EVs = {
+        'match' : np.loadtxt(op.join(path,'EVs','match.txt')),
+        'relation' : np.loadtxt(op.join(path,'EVs','relation.txt')),
+        'error' : np.loadtxt(op.join(path,'EVs','error.txt')), # might be empty
     }
-    'EMOTION' : {
-        'fear' : np.loadtxt(path+'EVs/fear.txt'),
-        'neut' : np.loadtxt(path+'EVs/neut.txt'),
+    if task == 'EMOTION' : EVs = {
+        'fear' : np.loadtxt(op.join(path,'EVs','fear.txt')),
+        'neut' : np.loadtxt(op.join(path,'EVs','neut.txt')),
     }
-}
+return EVs
+
 #----------------------------------
 # 3 alternate denoising pipelines
 # many more can be implemented
@@ -324,11 +325,12 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  @param  [bool] overwrite True if existing files should be overwritten
 #  @return [tuple] whole brain, white matter, cerebrospinal fluid and gray matter masks
 #  
-def makeTissueMasks(overwrite=False):
-    fmriFile = op.join(buildpath(), config.fmriRun+config.suffix+'.nii.gz')
+def makeTissueMasks(overwrite=False,precomputed=False):
+    fmriFile = config.fmriFile
     WMmaskFileout = op.join(buildpath(), 'WMmask.nii')
     CSFmaskFileout = op.join(buildpath(), 'CSFmask.nii')
     GMmaskFileout = op.join(buildpath(), 'GMmask.nii')
+    
     if not op.isfile(GMmaskFileout) or overwrite:
         # load ribbon.nii.gz and wmparc.nii.gz
         #ribbonFilein = op.join(config.DATADIR, config.subject, 'MNINonLinear','ribbon.nii.gz')
