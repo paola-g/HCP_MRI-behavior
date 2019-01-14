@@ -318,7 +318,7 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
         else:
             data = np.asarray(img.dataobj).reshape((nRows*nCols*nSlices,nTRs), order='F')[maskAll,:]
 
-    return data, nRows, nCols, nSlices, nTRs, img.affine, TR
+    return data, nRows, nCols, nSlices, nTRs, img.affine, TR, img.header
 	
 ## 
 #  @brief Create whole brain and tissue masks
@@ -1076,7 +1076,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
 
             # original volume
-            X, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.fmriFile, maskAll)
+            X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
             X = stats.zscore(X, axis=1, ddof=1)
             Xgm  = X[maskGM_,:]
             Xwm  = X[maskWM_,:]
@@ -1110,7 +1110,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
 
         # denoised volume
         if not config.isCifti:
-            X, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.fmriFile_dn, maskAll)
+            X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
             X = stats.zscore(X, axis=1, ddof=1)
             Xgm  = X[maskGM_,:]
             Xwm  = X[maskWM_,:]
@@ -1173,7 +1173,7 @@ def parcellate(overwrite=False):
         maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
         if not config.maskParcelswithAll:     
             maskAll  = np.ones(np.shape(maskAll), dtype=bool)
-        allparcels, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.parcellationFile, maskAll)
+        allparcels, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.parcellationFile, maskAll)
         if config.maskParcelswithGM:
             allparcels[np.logical_not(maskGM_)] = 0;
     else:
@@ -1190,7 +1190,7 @@ def parcellate(overwrite=False):
     if not op.isfile(alltsFile) or overwrite:
         # read original volume
         if not config.isCifti:
-            data, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.fmriFile, maskAll)
+            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
         else:
             if not op.isfile(config.fmriFile.replace('.dtseries.nii','.tsv')):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,
@@ -1661,7 +1661,7 @@ def runPipeline():
         # volume
         volFile = op.join(buildpath(), config.fmriRun+'.nii.gz')
         print 'Loading [volume] data in memory... {}'.format(volFile)
-        volData, nRows, nCols, nSlices, nTRs, affine, TR = load_img(volFile, maskAll) 
+        volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         # cifti
         print 'Loading [cifti] data in memory... {}'.format(config.fmriFile.replace('.dtseries.nii','.tsv'))
         if not op.isfile(config.fmriFile.replace('.dtseries.nii','.tsv')):
@@ -1671,7 +1671,7 @@ def runPipeline():
     else:
         volFile = config.fmriFile
         print 'Loading [volume] data in memory... {}'.format(config.fmriFile)
-        data, nRows, nCols, nSlices, nTRs, affine, TR = load_img(volFile, maskAll) 
+        data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         volData = None
        
     nsteps = len(steps)
