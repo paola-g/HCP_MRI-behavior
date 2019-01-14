@@ -31,11 +31,11 @@ class config(object):
 # IMPORTS
 #----------------------------------
 # Force matplotlib to not use any Xwindows backend.
-#import matplotlib
+import matplotlib
 # core dump with matplotlib 2.0.0; use earlier version, e.g. 1.5.3
-#matplotlib.use('Agg')
-#import matplotlib.pyplot as plt
-#import matplotlib.image as mpimg
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import pandas as pd
 import os.path as op
 from os import mkdir, makedirs, getcwd, remove, listdir, environ
@@ -74,8 +74,8 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    #return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
-    return op.join(config.DATADIR)
+    return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
+    #return op.join(config.DATADIR)
 
 
 #----------------------------------
@@ -85,49 +85,49 @@ def buildpath():
 def get_EVs(path,task):
     EVs = {}
     if task == 'GAMBLING' : EVs = {
-        'win_event' : np.loadtxt(op.join(path,'EVs','win_event.txt')),
-        'loss_event' : np.loadtxt(op.join(path,'EVs','loss_event.txt')),
-        'neut_event' : np.loadtxt(op.join(path,'EVs','neut_event.txt')),
+        'win_event' : np.loadtxt(op.join(path,'EVs','win_event.txt'),ndmin=2),
+        'loss_event' : np.loadtxt(op.join(path,'EVs','loss_event.txt'),ndmin=2),
+        'neut_event' : np.loadtxt(op.join(path,'EVs','neut_event.txt'),ndmin=2),
     }
     if task == 'WM' : EVs = {
-        '0bk_body' : np.loadtxt(op.join(path,'EVs','0bk_body.txt')),
-        '0bk_faces' : np.loadtxt(op.join(path,'EVs','0bk_faces.txt')),
-        '0bk_places' : np.loadtxt(op.join(path,'EVs','0bk_places.txt')),
-        '0bk_tools' : np.loadtxt(op.join(path,'EVs','0bk_tools.txt')),
-        '2bk_body' : np.loadtxt(op.join(path,'EVs','2bk_body.txt')),
-        '2bk_faces' : np.loadtxt(op.join(path,'EVs','2bk_faces.txt')),
-        '2bk_places' : np.loadtxt(op.join(path,'EVs','2bk_places.txt')),
-        '2bk_tools' : np.loadtxt(op.join(path,'EVs','2bk_tools.txt')),
+        '0bk_body' : np.loadtxt(op.join(path,'EVs','0bk_body.txt'),ndmin=2),
+        '0bk_faces' : np.loadtxt(op.join(path,'EVs','0bk_faces.txt'),ndmin=2),
+        '0bk_places' : np.loadtxt(op.join(path,'EVs','0bk_places.txt'),ndmin=2),
+        '0bk_tools' : np.loadtxt(op.join(path,'EVs','0bk_tools.txt'),ndmin=2),
+        '2bk_body' : np.loadtxt(op.join(path,'EVs','2bk_body.txt'),ndmin=2),
+        '2bk_faces' : np.loadtxt(op.join(path,'EVs','2bk_faces.txt'),ndmin=2),
+        '2bk_places' : np.loadtxt(op.join(path,'EVs','2bk_places.txt'),ndmin=2),
+        '2bk_tools' : np.loadtxt(op.join(path,'EVs','2bk_tools.txt'),ndmin=2),
     }
     if task == 'MOTOR' : EVs = {
-        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt')),
-        'lf' : np.loadtxt(op.join(path,'EVs','lf.txt')),
-        'rf' : np.loadtxt(op.join(path,'EVs','rf.txt')),
-        'lh' : np.loadtxt(op.join(path,'EVs','lh.txt')),
-        'rh' : np.loadtxt(op.join(path,'EVs','rh.txt')),
-        't' : np.loadtxt(op.join(path,'EVs','t.txt')),
+        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt'),ndmin=2),
+        'lf' : np.loadtxt(op.join(path,'EVs','lf.txt'),ndmin=2),
+        'rf' : np.loadtxt(op.join(path,'EVs','rf.txt'),ndmin=2),
+        'lh' : np.loadtxt(op.join(path,'EVs','lh.txt'),ndmin=2),
+        'rh' : np.loadtxt(op.join(path,'EVs','rh.txt'),ndmin=2),
+        't' : np.loadtxt(op.join(path,'EVs','t.txt'),ndmin=2),
     }
     if task == 'LANGUAGE' : EVs = {
-        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt')),
-        'present_math' : np.loadtxt(op.join(path,'EVs','present_math.txt')),
-        'question_math' : np.loadtxt(op.join(path,'EVs','question_math.txt')),
-        'response_math' : np.loadtxt(op.join(path,'EVs','response_math.txt')),
-        'present_story' : np.loadtxt(op.join(path,'EVs','present_story.txt')),
-        'question_story' : np.loadtxt(op.join(path,'EVs','question_story.txt')),
-        'response_story' : np.loadtxt(op.join(path,'EVs','response_story.txt')),
+        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt'),ndmin=2),
+        'present_math' : np.loadtxt(op.join(path,'EVs','present_math.txt'),ndmin=2),
+        'question_math' : np.loadtxt(op.join(path,'EVs','question_math.txt'),ndmin=2),
+        'response_math' : np.loadtxt(op.join(path,'EVs','response_math.txt'),ndmin=2),
+        'present_story' : np.loadtxt(op.join(path,'EVs','present_story.txt'),ndmin=2),
+        'question_story' : np.loadtxt(op.join(path,'EVs','question_story.txt'),ndmin=2),
+        'response_story' : np.loadtxt(op.join(path,'EVs','response_story.txt'),ndmin=2),
     }
     if task == 'SOCIAL' : EVs = {
-        'mental' : np.loadtxt(op.join(path,'EVs','mental.txt')),
-        'rnd' : np.loadtxt(op.join(path,'EVs','rnd.txt')),
+        'mental' : np.loadtxt(op.join(path,'EVs','mental.txt'),ndmin=2),
+        'rnd' : np.loadtxt(op.join(path,'EVs','rnd.txt'),ndmin=2),
     }
     if task == 'RELATIONAL' : EVs = {
-        'match' : np.loadtxt(op.join(path,'EVs','match.txt')),
-        'relation' : np.loadtxt(op.join(path,'EVs','relation.txt')),
-        'error' : np.loadtxt(op.join(path,'EVs','error.txt')), # might be empty
+        'match' : np.loadtxt(op.join(path,'EVs','match.txt'),ndmin=2),
+        'relation' : np.loadtxt(op.join(path,'EVs','relation.txt'),ndmin=2),
+        'error' : np.loadtxt(op.join(path,'EVs','error.txt'),ndmin=2), # might be empty
     }
     if task == 'EMOTION' : EVs = {
-        'fear' : np.loadtxt(op.join(path,'EVs','fear.txt')),
-        'neut' : np.loadtxt(op.join(path,'EVs','neut.txt')),
+        'fear' : np.loadtxt(op.join(path,'EVs','fear.txt'),ndmin=2),
+        'neut' : np.loadtxt(op.join(path,'EVs','neut.txt'),ndmin=2),
     }
     return EVs
 
@@ -318,7 +318,7 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
         else:
             data = np.asarray(img.dataobj).reshape((nRows*nCols*nSlices,nTRs), order='F')[maskAll,:]
 
-    return data, nRows, nCols, nSlices, nTRs, img.affine, TR, img.header
+    return data, nRows, nCols, nSlices, nTRs, img.affine, TR
 	
 ## 
 #  @brief Create whole brain and tissue masks
@@ -692,6 +692,12 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
 def TaskRegression(niiImg, flavor, masks, imgInfo):
     nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
     trials = get_EVs(buildpath(), flavor[0])
+    # sometimes an EV is empty
+    # need to drop it
+    for k in trials.keys():
+        if trials[k].shape[1]==1:
+            trials.pop(k, None)
+    print(trials)
     frame_times = np.arange(nTRs) * TR
     d = {
         'onset' : np.hstack([trials[k][:,0] for k in trials.keys()]),
@@ -1024,6 +1030,7 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
 
 # Struct used to associate functions to operation names
 Hooks={
+    'TaskRegression'         : TaskRegression,
     'MotionRegression'       : MotionRegression,
     'Scrubbing'              : Scrubbing,
     'TissueRegression'       : TissueRegression,
@@ -1069,7 +1076,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
 
             # original volume
-            X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
+            X, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.fmriFile, maskAll)
             X = stats.zscore(X, axis=1, ddof=1)
             Xgm  = X[maskGM_,:]
             Xwm  = X[maskWM_,:]
@@ -1103,7 +1110,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
 
         # denoised volume
         if not config.isCifti:
-            X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
+            X, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.fmriFile_dn, maskAll)
             X = stats.zscore(X, axis=1, ddof=1)
             Xgm  = X[maskGM_,:]
             Xwm  = X[maskWM_,:]
@@ -1166,7 +1173,7 @@ def parcellate(overwrite=False):
         maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
         if not config.maskParcelswithAll:     
             maskAll  = np.ones(np.shape(maskAll), dtype=bool)
-        allparcels, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.parcellationFile, maskAll)
+        allparcels, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.parcellationFile, maskAll)
         if config.maskParcelswithGM:
             allparcels[np.logical_not(maskGM_)] = 0;
     else:
@@ -1183,7 +1190,7 @@ def parcellate(overwrite=False):
     if not op.isfile(alltsFile) or overwrite:
         # read original volume
         if not config.isCifti:
-            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
+            data, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.fmriFile, maskAll)
         else:
             if not op.isfile(config.fmriFile.replace('.dtseries.nii','.tsv')):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,
@@ -1209,7 +1216,7 @@ def parcellate(overwrite=False):
     if (not op.isfile(alltsFile)) or overwrite:
         # read denoised volume
         if not config.isCifti:
-            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
+            data, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.fmriFile_dn, maskAll)
         else:
             if not op.isfile(config.fmriFile_dn.replace('.dtseries.nii','.tsv')):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,
@@ -1365,10 +1372,14 @@ def defConVec(df,confound,session):
     elif confound == 'brainsize':
         conVec = df['FS_BrainSeg_Vol']
     elif confound == 'motion':
-        if session in ['REST1','REST2']:
+        if session in ['REST1','REST2','EMOTION','GAMBLING','LANGUAGE','MOTOR','RELATIONAL','SOCIAL','WM']:
             conVec = df['FDsum_'+session]
         elif session == 'REST12':
-            conVec = .5*(df['FDsum_REST1'] + df['FDsum_REST2'])
+            conVec = 1./2.*(df['FDsum_REST1'] + df['FDsum_REST2'])
+        elif session == 'TASK':
+            conVec = 1./7.*(df['FDsum_EMOTION'] + df['FDsum_GAMBLING'] + df['FDsum_LANGUAGE'] + df['FDsum_MOTOR'] + df['FDsum_RELATIONAL'] + df['FDsum_SOCIAL'] + df['FDsum_WM'])
+        elif session == 'TASK+REST':
+            conVec = 1./9.*(df['FDsum_EMOTION'] + df['FDsum_GAMBLING'] + df['FDsum_LANGUAGE'] + df['FDsum_MOTOR'] + df['FDsum_RELATIONAL'] + df['FDsum_SOCIAL'] + df['FDsum_WM'] + df['FDsum_REST1'] + df['FDsum_REST2'])
     elif confound == 'recon':
         conVec = df['fMRI_3T_ReconVrs']
     elif confound == 'PMAT24_A_CR':
@@ -1650,7 +1661,7 @@ def runPipeline():
         # volume
         volFile = op.join(buildpath(), config.fmriRun+'.nii.gz')
         print 'Loading [volume] data in memory... {}'.format(volFile)
-        volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
+        volData, nRows, nCols, nSlices, nTRs, affine, TR = load_img(volFile, maskAll) 
         # cifti
         print 'Loading [cifti] data in memory... {}'.format(config.fmriFile.replace('.dtseries.nii','.tsv'))
         if not op.isfile(config.fmriFile.replace('.dtseries.nii','.tsv')):
@@ -1660,7 +1671,7 @@ def runPipeline():
     else:
         volFile = config.fmriFile
         print 'Loading [volume] data in memory... {}'.format(config.fmriFile)
-        data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
+        data, nRows, nCols, nSlices, nTRs, affine, TR = load_img(volFile, maskAll) 
         volData = None
        
     nsteps = len(steps)
