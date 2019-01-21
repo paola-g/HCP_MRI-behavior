@@ -74,7 +74,7 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    return op.join(config.DATADIR, 'derivatives', config.subject,'MNINonLinear','Results',config.fmriRun)
+    return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
 
 
 #----------------------------------
@@ -304,6 +304,9 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
         nTRs = 1
     TR = img.header.structarr['pixdim'][4]
 
+    print img.dataobj.shape
+    sys.stdout.flush()
+
     if unzip:
         data = np.memmap(volFile, dtype=img.header.get_data_dtype(), mode='c', order='F',
             offset=img.dataobj.offset,shape=img.header.get_data_shape())
@@ -324,24 +327,90 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  
 #  @return [tuple] whole brain, white matter, cerebrospinal fluid and gray matter masks
 #  
-def makeTissueMasks():
-    AllmaskFile = op.join(config.DATADIR,'derivatives','fmriprep',config.subject,'anat',
-	'{}_space-MNI152NLin2009cAsym_desc-brain_mask.nii.gz'.format(config.subject))
-    segFile = op.join(config.DATADIR,'derivatives','fmriprep',config.subject,'anat',
-	'{}_space-MNI152NLin2009cAsym_dseg.nii.gz'.format(config.subject))
+def makeTissueMasks(overwrite=False,precomputed=False):
+    fmriFile = config.fmriFile
+    WMmaskFileout = op.join(buildpath(), 'WMmask.nii')
+    CSFmaskFileout = op.join(buildpath(), 'CSFmask.nii')
+    GMmaskFileout = op.join(buildpath(), 'GMmask.nii')
     
-    tmpAll = nib.load(AllmaskFile)
-    nRows, nCols, nSlices = tmpAll.header.get_data_shape()
-    maskAll = np.asarray(tmpAll.dataobj).reshape(nRows*nCols*nSlices, order='F') > 0
+    if not op.isfile(GMmaskFileout) or overwrite:
+        # load wmparc.nii.gz
+        wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
+        # make sure it is resampled to the same space as the functional run
+        wmparcFileout = op.join(buildpath(), 'wmparc.nii.gz')
+        # make identity matrix to feed to flirt for resampling
+        wmparcMat = op.join(buildpath(), 'wmparc_flirt_{}.mat'.format(config.pipelineName))
+        eyeMat = op.join(buildpath(), 'eye_{}.mat'.format(config.pipelineName))
+        with open(eyeMat,'w') as fid:
+            fid.write('1 0 0 0\n0 1 0 0\n0 0 1 0\n0 0 0 1')
+
         
-    tmpSeg = nib.load(segFile)
-    maskCSF = np.asarray(tmpSeg.dataobj).reshape(nRows*nCols*nSlices, order='F') == 1
+        flirt_wmparc = fsl.FLIRT(in_file=wmparcFilein, out_file=wmparcFileout,
+                                reference=fmriFile, apply_xfm=True,
+                                in_matrix_file=eyeMat, out_matrix_file=wmparcMat, interp='nearestneighbour')
 
-    maskGM = np.asarray(tmpSeg.dataobj).reshape(nRows*nCols*nSlices, order='F') == 2
+        flirt_wmparc.run()
+        
+        # load nii (ribbon & wmparc)
+        wmparc = np.asarray(nib.load(wmparcFileout).dataobj)
+        
+        # indices are from FreeSurferColorLUT.txt
+        
+        # Cerebellar-White-Matter-Left, Brain-Stem, Cerebellar-White-Matter-Right
+        wmparcWMstructures = [7, 16, 46, 3000:3036, 4000:4036]
+        # Left-Cerebellar-Cortex, Right-Cerebellar-Cortex, Thalamus-Left, Caudate-Left
+        # Putamen-Left, Pallidum-Left, Hippocampus-Left, Amygdala-Left, Accumbens-Left 
+        # Diencephalon-Ventral-Left, Thalamus-Right, Caudate-Right, Putamen-Right
+        # Pallidum-Right, Hippocampus-Right, Amygdala-Right, Accumbens-Right
+        # Diencephalon-Ventral-Right
+        wmparcGMstructures = [8, 47, 10, 11, 12, 13, 17, 18, 26, 28, 49, 50, 51, 52, 53, 54, 58, 60, 1000:1036, 2000:2036]
+        # Fornix, CC-Posterior, CC-Mid-Posterior, CC-Central, CC-Mid-Anterior, CC-Anterior
+        wmparcCCstructures = [250, 251, 252, 253, 254, 255]
+        # Left-Lateral-Ventricle, Left-Inf-Lat-Vent, 3rd-Ventricle, 4th-Ventricle, CSF
+        # Left-Choroid-Plexus, Right-Lateral-Ventricle, Right-Inf-Lat-Vent, Right-Choroid-Plexus
+        wmparcCSFstructures = [4, 5, 14, 15, 24, 31, 43, 44, 63]
+        
+        # make masks
+        WMmask = np.double(np.logical_and(np.logical_and(np.logical_or(np.in1d(wmparc, wmparcWMstructures),
+                                                                np.in1d(wmparc, wmparcCCstructures)),
+                                                  np.logical_not(np.in1d(wmparc, wmparcCSFstructures))),
+                                   np.logical_not(np.in1d(wmparc, wmparcGMstructures))))
+        CSFmask = np.double(np.in1d(wmparc, wmparcCSFstructures))
+        GMmask = np.double(np.in1d(wmparc,wmparcGMstructures))
+        
+        # write masks
+        ref = nib.load(wmparcFileout)
+        img = nib.Nifti1Image(WMmask.reshape(ref.shape).astype('<f4'), ref.affine)
+        nib.save(img, WMmaskFileout)
+        
+        img = nib.Nifti1Image(CSFmask.reshape(ref.shape).astype('<f4'), ref.affine)
+        nib.save(img, CSFmaskFileout)
+        
+        img = nib.Nifti1Image(GMmask.reshape(ref.shape).astype('<f4'), ref.affine)
+        nib.save(img, GMmaskFileout)
+        
+        # delete temporary files
+        cmd = 'rm {} {} {}'.format(eyeMat, ribbonMat, wmparcMat)
+        call(cmd,shell=True)
+        
+        
+    tmpWM = nib.load(WMmaskFileout)
+    nRows, nCols, nSlices = tmpWM.header.get_data_shape()
+    maskWM = np.asarray(tmpWM.dataobj).reshape(nRows*nCols*nSlices, order='F') > 0
 
-    maskWM = np.asarray(tmpSeg.dataobj).reshape(nRows*nCols*nSlices, order='F') == 3
+    tmpCSF = nib.load(CSFmaskFileout)
+    maskCSF = np.asarray(tmpCSF.dataobj).reshape(nRows*nCols*nSlices, order='F')  > 0
 
-    return maskAll, maskWM, maskCSF, maskGM
+    tmpGM = nib.load(GMmaskFileout)
+    maskGM = np.asarray(tmpGM.dataobj).reshape(nRows*nCols*nSlices, order='F') > 0
+
+    maskAll  = np.logical_or(np.logical_or(maskWM, maskCSF), maskGM)
+    maskWM_  = maskWM[maskAll]
+    maskCSF_ = maskCSF[maskAll]
+    maskGM_  = maskGM[maskAll]
+
+    return maskAll, maskWM_, maskCSF_, maskGM_
+
 
 def extract_noise_components(niiImg, WMmask, CSFmask, num_components=5, flavor=None):
     """
