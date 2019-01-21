@@ -1708,7 +1708,7 @@ def runPipeline():
 
     print 'Done! Copy the resulting file...'
     rstring = ''.join(random.SystemRandom().choice(string.ascii_lowercase +string.ascii_uppercase + string.digits) for _ in range(8))
-    outDir  = op.join(config.outDir, 'denoise', config.pipelineName, config.subject)
+    outDir  = outpath()
     outFile = config.fmriRun+'_prepro_'+rstring
     if config.isCifti:
         # write to text file
