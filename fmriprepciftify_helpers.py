@@ -21,7 +21,7 @@ class config(object):
     useNative          = False
     parcellationName   = ''
     parcellationFile   = ''
-    outDir             = ''
+    outDir             = 'rsDenoise'
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -74,8 +74,22 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
+    #return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
+    return op.join(config.DATADIR)
 
+#----------------------------------
+# function to build dinamycally output path  
+#----------------------------------
+def outpath():
+    if not op.isdir(config.outDir): mkdir(config.outDir)
+    outPath = op.join(config.outDir,config.pipelineName)
+    if not op.isdir(outPath): mkdir(outPath)
+    outPath = op.join(outPath,config.subject)
+    if not op.isdir(outPath): mkdir(outPath)
+    outPath = op.join(outPath,config.fmriRun)
+    if not op.isdir(outPath): mkdir(outPath)
+
+    return outPath
 
 #----------------------------------
 # EVs for task regression
@@ -329,18 +343,19 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  
 def makeTissueMasks(overwrite=False,precomputed=False):
     fmriFile = config.fmriFile
-    WMmaskFileout = op.join(buildpath(), 'WMmask.nii')
-    CSFmaskFileout = op.join(buildpath(), 'CSFmask.nii')
-    GMmaskFileout = op.join(buildpath(), 'GMmask.nii')
+    WMmaskFileout = op.join(outpath(),'WMmask2.nii')
+    CSFmaskFileout = op.join(outpath(), 'CSFmask2.nii')
+    GMmaskFileout = op.join(outpath(), 'GMmask2.nii')
     
     if not op.isfile(GMmaskFileout) or overwrite:
         # load wmparc.nii.gz
-        wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
+        #wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
+        wmparcFilein = op.join(buildpath(), 'wmparc.nii.gz')
         # make sure it is resampled to the same space as the functional run
-        wmparcFileout = op.join(buildpath(), 'wmparc.nii.gz')
+        wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
         # make identity matrix to feed to flirt for resampling
-        wmparcMat = op.join(buildpath(), 'wmparc_flirt_{}.mat'.format(config.pipelineName))
-        eyeMat = op.join(buildpath(), 'eye_{}.mat'.format(config.pipelineName))
+        wmparcMat = op.join(outpath(), 'wmparc_flirt.mat')
+        eyeMat = op.join(outpath(), 'eye.mat')
         with open(eyeMat,'w') as fid:
             fid.write('1 0 0 0\n0 1 0 0\n0 0 1 0\n0 0 0 1')
 
@@ -357,13 +372,17 @@ def makeTissueMasks(overwrite=False,precomputed=False):
         # indices are from FreeSurferColorLUT.txt
         
         # Cerebellar-White-Matter-Left, Brain-Stem, Cerebellar-White-Matter-Right
-        wmparcWMstructures = [7, 16, 46, 3000:3036, 4000:4036]
+        wmparcWMstructures = [7, 16, 46]
+        # Cortical white matter (left and right)
+        wmparcWMstructures = np.concatenate([wmparcWMstructures, np.arange(3000,3036), np.arange(4000,4036)])
         # Left-Cerebellar-Cortex, Right-Cerebellar-Cortex, Thalamus-Left, Caudate-Left
         # Putamen-Left, Pallidum-Left, Hippocampus-Left, Amygdala-Left, Accumbens-Left 
         # Diencephalon-Ventral-Left, Thalamus-Right, Caudate-Right, Putamen-Right
         # Pallidum-Right, Hippocampus-Right, Amygdala-Right, Accumbens-Right
         # Diencephalon-Ventral-Right
-        wmparcGMstructures = [8, 47, 10, 11, 12, 13, 17, 18, 26, 28, 49, 50, 51, 52, 53, 54, 58, 60, 1000:1036, 2000:2036]
+        wmparcGMstructures = [8, 47, 10, 11, 12, 13, 17, 18, 26, 28, 49, 50, 51, 52, 53, 54, 58, 60]
+        # Cortical gray matter (left and write)
+        wmparcGMstructures = np.concatenate([wmparcGMstructures, np.arange(1000,1036), np.arange(2000,2036)])
         # Fornix, CC-Posterior, CC-Mid-Posterior, CC-Central, CC-Mid-Anterior, CC-Anterior
         wmparcCCstructures = [250, 251, 252, 253, 254, 255]
         # Left-Lateral-Ventricle, Left-Inf-Lat-Vent, 3rd-Ventricle, 4th-Ventricle, CSF
@@ -390,7 +409,7 @@ def makeTissueMasks(overwrite=False,precomputed=False):
         nib.save(img, GMmaskFileout)
         
         # delete temporary files
-        cmd = 'rm {} {} {}'.format(eyeMat, ribbonMat, wmparcMat)
+        cmd = 'rm {} {}'.format(eyeMat, wmparcMat)
         call(cmd,shell=True)
         
         
@@ -1689,7 +1708,7 @@ def runPipeline():
 
     print 'Done! Copy the resulting file...'
     rstring = ''.join(random.SystemRandom().choice(string.ascii_lowercase +string.ascii_uppercase + string.digits) for _ in range(8))
-    outDir  = buildpath()
+    outDir  = op.join(config.outDir, 'denoise', config.pipelineName, config.subject)
     outFile = config.fmriRun+'_prepro_'+rstring
     if config.isCifti:
         # write to text file
