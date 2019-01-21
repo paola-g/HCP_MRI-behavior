@@ -74,8 +74,8 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    #return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
-    return op.join(config.DATADIR)
+    return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
+    #return op.join(config.DATADIR)
 
 #----------------------------------
 # function to build dinamycally output path  
@@ -349,8 +349,8 @@ def makeTissueMasks(overwrite=False,precomputed=False):
     
     if not op.isfile(GMmaskFileout) or overwrite:
         # load wmparc.nii.gz
-        #wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
-        wmparcFilein = op.join(buildpath(), 'wmparc.nii.gz')
+        wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
+        #wmparcFilein = op.join(buildpath(), 'wmparc.nii.gz')
         # make sure it is resampled to the same space as the functional run
         wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
         # make identity matrix to feed to flirt for resampling
