@@ -74,7 +74,10 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
+    if hasattr(config, 'session') and config.session:
+        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.subject+'_'+config.session+'_'+config.fmriRun)
+    else:
+        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
     #return op.join(config.DATADIR)
 
 #----------------------------------
@@ -86,6 +89,9 @@ def outpath():
     if not op.isdir(outPath): mkdir(outPath)
     outPath = op.join(outPath,config.subject)
     if not op.isdir(outPath): mkdir(outPath)
+    if hasattr(config, 'session') and config.session:
+        outPath = op.join(outPath,config.session)
+        if not op.isdir(outPath): mkdir(outPath)
     outPath = op.join(outPath,config.fmriRun)
     if not op.isdir(outPath): mkdir(outPath)
 
@@ -343,9 +349,9 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  
 def makeTissueMasks(overwrite=False,precomputed=False):
     fmriFile = config.fmriFile
-    WMmaskFileout = op.join(outpath(),'WMmask2.nii')
-    CSFmaskFileout = op.join(outpath(), 'CSFmask2.nii')
-    GMmaskFileout = op.join(outpath(), 'GMmask2.nii')
+    WMmaskFileout = op.join(outpath(),'WMmask.nii')
+    CSFmaskFileout = op.join(outpath(), 'CSFmask.nii')
+    GMmaskFileout = op.join(outpath(), 'GMmask.nii')
     
     if not op.isfile(GMmaskFileout) or overwrite:
         # load wmparc.nii.gz
@@ -390,10 +396,11 @@ def makeTissueMasks(overwrite=False,precomputed=False):
         wmparcCSFstructures = [4, 5, 14, 15, 24, 31, 43, 44, 63]
         
         # make masks
-        WMmask = np.double(np.logical_and(np.logical_and(np.logical_or(np.in1d(wmparc, wmparcWMstructures),
-                                                                np.in1d(wmparc, wmparcCCstructures)),
-                                                  np.logical_not(np.in1d(wmparc, wmparcCSFstructures))),
-                                   np.logical_not(np.in1d(wmparc, wmparcGMstructures))))
+        #WMmask = np.double(np.logical_and(np.logical_and(np.logical_or(np.in1d(wmparc, wmparcWMstructures),
+        #                                                        np.in1d(wmparc, wmparcCCstructures)),
+        #                                          np.logical_not(np.in1d(wmparc, wmparcCSFstructures))),
+        #                           np.logical_not(np.in1d(wmparc, wmparcGMstructures))))
+        WMmask = np.in1d(wmparc, wmparcWMstructures)
         CSFmask = np.double(np.in1d(wmparc, wmparcCSFstructures))
         GMmask = np.double(np.in1d(wmparc,wmparcGMstructures))
         
@@ -710,8 +717,8 @@ def TaskRegression(niiImg, flavor, masks, imgInfo):
     return np.array(DM)
 
 def MotionRegression(niiImg, flavor, masks, imgInfo):
-    # assumes that data is organized as in the HCP
     motionFile = op.join(buildpath(), config.movementRegressorsFile)
+    motionFile = op.join(config.DATADIR, 'fmriprep', config.subject, )
     data = np.genfromtxt(motionFile)
     if flavor[0] == 'R dR':
         X = data
@@ -1585,7 +1592,7 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         # print date and time stamp
         thispythonfn += 'print "========================="\n'
         thispythonfn += 'print strftime("%Y-%m-%d %H:%M:%S", localtime())\n'
-        thispythonfn += 'print "========================="\n'
+        uhispythonfn += 'print "========================="\n'
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
         thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
