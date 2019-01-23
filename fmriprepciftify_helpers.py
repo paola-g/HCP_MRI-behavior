@@ -349,9 +349,9 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  
 def makeTissueMasks(overwrite=False,precomputed=False):
     fmriFile = config.fmriFile
-    WMmaskFileout = op.join(outpath(),'WMmask.nii')
-    CSFmaskFileout = op.join(outpath(), 'CSFmask.nii')
-    GMmaskFileout = op.join(outpath(), 'GMmask.nii')
+    WMmaskFileout = op.join(outpath(),'WMmask3.nii')
+    CSFmaskFileout = op.join(outpath(), 'CSFmask3.nii')
+    GMmaskFileout = op.join(outpath(), 'GMmask3.nii')
     
     if not op.isfile(GMmaskFileout) or overwrite:
         # load wmparc.nii.gz
@@ -378,7 +378,7 @@ def makeTissueMasks(overwrite=False,precomputed=False):
         # indices are from FreeSurferColorLUT.txt
         
         # Cerebellar-White-Matter-Left, Brain-Stem, Cerebellar-White-Matter-Right
-        wmparcWMstructures = [7, 16, 46]
+        wmparcWMstructures = [7, 16, 46, 5001, 5002]
         # Cortical white matter (left and right)
         wmparcWMstructures = np.concatenate([wmparcWMstructures, np.arange(3000,3036), np.arange(4000,4036)])
         # Left-Cerebellar-Cortex, Right-Cerebellar-Cortex, Thalamus-Left, Caudate-Left
@@ -400,7 +400,8 @@ def makeTissueMasks(overwrite=False,precomputed=False):
         #                                                        np.in1d(wmparc, wmparcCCstructures)),
         #                                          np.logical_not(np.in1d(wmparc, wmparcCSFstructures))),
         #                           np.logical_not(np.in1d(wmparc, wmparcGMstructures))))
-        WMmask = np.in1d(wmparc, wmparcWMstructures)
+        #WMmask = np.in1d(wmparc, wmparcWMstructures)
+        WMmask = np.double(np.logical_or(np.in1d(wmparc, wmparcCCstructures),np.in1d(wmparc, wmparcWMstructures)))
         CSFmask = np.double(np.in1d(wmparc, wmparcCSFstructures))
         GMmask = np.double(np.in1d(wmparc,wmparcGMstructures))
         
