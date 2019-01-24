@@ -81,11 +81,11 @@ def buildpath():
     #return op.join(config.DATADIR)
 
 #----------------------------------
-# function to build dinamycally output path  
+# function to build dinamycally output path (BIDS-like) 
 #----------------------------------
 def outpath():
     if not op.isdir(config.outDir): mkdir(config.outDir)
-    outPath = op.join(config.outDir,config.pipelineName)
+    outPath = op.join(config.outDir,'denoise_'+config.pipelineName)
     if not op.isdir(outPath): mkdir(outPath)
     outPath = op.join(outPath,config.subject)
     if not op.isdir(outPath): mkdir(outPath)
@@ -349,9 +349,9 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  
 def makeTissueMasks(overwrite=False,precomputed=False):
     fmriFile = config.fmriFile
-    WMmaskFileout = op.join(outpath(),'WMmask3.nii')
-    CSFmaskFileout = op.join(outpath(), 'CSFmask3.nii')
-    GMmaskFileout = op.join(outpath(), 'GMmask3.nii')
+    WMmaskFileout = op.join(outpath(),'WMmask.nii')
+    CSFmaskFileout = op.join(outpath(), 'CSFmask.nii')
+    GMmaskFileout = op.join(outpath(), 'GMmask.nii')
     
     if not op.isfile(GMmaskFileout) or overwrite:
         # load wmparc.nii.gz
@@ -718,20 +718,33 @@ def TaskRegression(niiImg, flavor, masks, imgInfo):
     return np.array(DM)
 
 def MotionRegression(niiImg, flavor, masks, imgInfo):
-    motionFile = op.join(buildpath(), config.movementRegressorsFile)
-    motionFile = op.join(config.DATADIR, 'fmriprep', config.subject, )
-    data = np.genfromtxt(motionFile)
+    if hasattr(config, 'session') and config.session:
+        confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session,'func', 
+		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
+    else:
+        confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, 'func', 
+		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
+    
+    confoundsFile = op.join(config.DATADIR, 'fmriprep', config.subject, )
+    data = pd.read_csv(confoundsFile, delimiter='\t')
     if flavor[0] == 'R dR':
-        X = data
+        X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
+        X = np.hstack([X1,X2]) 
     elif flavor[0] == 'R dR R^2 dR^2':
-        data_squared = data ** 2
-        X = np.concatenate((data, data_squared), axis=1)
+        X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
+        X3 = X1 ** 2
+        X4 = X2 ** 2
+        X = np.hstack([X1,X2,X3,X4]) 
     elif flavor[0] == 'censoring':
         nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
         X = np.empty((nTRs, 0))
     else:
         print 'Wrong flavor, using default regressors: R dR'
-        X = data
+        X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
+        X = np.hstack([X1,X2]) 
         
     # if filtering has already been performed, regressors need to be filtered too
     if len(config.filtering)>0 and X.size > 0:
@@ -740,7 +753,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         
     if config.doScrubbing:
         nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
-        toCensor = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
+        toCensor = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
         npts = toCensor.size
         if npts==1:
             toCensor=np.reshape(toCensor,(npts,))
@@ -825,7 +838,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     censored.sort()
     censored = censored.astype(int)
     
-    np.savetxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), censored, delimiter='\n', fmt='%d')
+    np.savetxt(op.join(outpath(), 'Censored_TimePoints.txt'), censored, delimiter='\n', fmt='%d')
     if len(censored)>0 and len(censored)<nTRs:
         config.doScrubbing = True
     if len(censored) == nTRs:
@@ -970,7 +983,7 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
 
     if config.doScrubbing:
-        censored = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
+        censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
         censored = np.atleast_1d(censored)
         if len(censored)<nTRs and len(censored) > 0:
             data = interpolate(niiImg[0],censored,TR,nTRs,method='linear')     
@@ -1278,7 +1291,7 @@ def computeFC(overwrite=False):
         ts = np.loadtxt(alltsFile)
         # censor time points that need censoring
         if config.doScrubbing:
-            censored = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
+            censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
             censored = np.atleast_1d(censored)
             tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
             ts = ts[tokeep,:]
@@ -1734,7 +1747,7 @@ def runPipeline():
     timeEnd = localtime()  
 
     outXML = rstring+'.xml'
-    conf2XML(config.fmriFile, config.DATADIR, sortedOperations, timeStart, timeEnd, op.join(buildpath(),outXML))
+    conf2XML(config.fmriFile, config.DATADIR, sortedOperations, timeStart, timeEnd, op.join(outpath(),outXML))
 
     print 'Preprocessing complete. '
     config.fmriFile_dn = op.join(outDir,outFile+config.ext)
