@@ -731,9 +731,15 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
 	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
         X = np.hstack([X1,X2]) 
+        X = signal.detrend(X,axis=0,type='constant') # demean
+        X = signal.detrend(X,axis=0,type='linear') # linear detrending
     elif flavor[0] == 'R dR R^2 dR^2':
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+        X1 = signal.detrend(X1,axis=0,type='constant') # demean
+        X1 = signal.detrend(X1,axis=0,type='linear') # linear detrending
 	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
+        X2 = signal.detrend(X2,axis=0,type='constant') # demean
+        X2 = signal.detrend(X2,axis=0,type='linear') # linear detrending
         X3 = X1 ** 2
         X4 = X2 ** 2
         X = np.hstack([X1,X2,X3,X4]) 
@@ -745,6 +751,8 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
 	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
         X = np.hstack([X1,X2]) 
+        X = signal.detrend(X,axis=0,type='constant') # demean
+        X = signal.detrend(X,axis=0,type='linear') # linear detrending
         
     # if filtering has already been performed, regressors need to be filtered too
     if len(config.filtering)>0 and X.size > 0:
