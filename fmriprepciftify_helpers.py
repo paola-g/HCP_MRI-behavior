@@ -699,6 +699,30 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
             break
     return data
 
+#  @brief Builds affine transformation matrix from rotations, translations and scaling parameters
+#  
+#  @param  [numpy.array] 3 rotation parameters (in radians)
+#  @param  [numpy.array] 3 translation parameters (in mm)
+#  @param  [numpy.array] 3 scaling parameters (if None, no scaling)
+#  @return [numpy.array] 4x4 affine transformation matrix
+#   
+def get_affine(R, T, S=None):
+    if S is None:
+        S_3x3 = np.eye(3)
+    else:
+        S_3x3 = np.diag(S)
+
+    thetaX = R[1]
+    thetaY = R[2]
+    thetaZ = R[3]
+    Rx = np.vstack(([1,0,0], [0, np.cos(thetaX), np.sin(thetaX)], [0, -np.sin(thetaX), np.cos(thetaX)])) 
+    Ry = np.vstack([[np.cos(thetaY), 0, -np.sin(thetaY)],[0, 1, 0],[np.sin(thetaY), 0, np.cos(thetaY)]])
+    Rz = np.vstack(([np.cos(thetaZ), np.sin(thetaZ), 0],[-np.sin(thetaZ), np.cos(thetaZ), 0],[0,0,1]))
+    R_3x3 = Rx*Ry*Rz
+ 
+    M = np.vstack((np.hstack((R_3x3*S_3x3, T.reshape(-1,1))),[0,0,0,1]))
+    return M
+
 # ---------------------
 # Pipeline Operations
 def TaskRegression(niiImg, flavor, masks, imgInfo):
@@ -727,6 +751,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
     
     confoundsFile = op.join(config.DATADIR, 'fmriprep', config.subject, )
     data = pd.read_csv(confoundsFile, delimiter='\t')
+    data = data.fillna(0)
     if flavor[0] == 'R dR':
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
 	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
