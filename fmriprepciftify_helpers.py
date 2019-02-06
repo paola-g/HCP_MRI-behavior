@@ -74,11 +74,11 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    if hasattr(config, 'session') and config.session:
-        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.subject+'_'+config.session+'_'+config.fmriRun)
-    else:
-        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
-    #return op.join(config.DATADIR)
+#    if hasattr(config, 'session') and config.session:
+#        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.subject+'_'+config.session+'_'+config.fmriRun)
+#    else:
+#        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
+    return op.join(config.DATADIR)
 
 #----------------------------------
 # function to build dinamycally output path (BIDS-like) 
@@ -712,21 +712,20 @@ def get_affine(R, T, S=None):
     else:
         S_3x3 = np.diag(S)
 
-    thetaX = R[1]
-    thetaY = R[2]
-    thetaZ = R[3]
+    thetaX = R[0]
+    thetaY = R[1]
+    thetaZ = R[2]
     Rx = np.vstack(([1,0,0], [0, np.cos(thetaX), np.sin(thetaX)], [0, -np.sin(thetaX), np.cos(thetaX)])) 
     Ry = np.vstack([[np.cos(thetaY), 0, -np.sin(thetaY)],[0, 1, 0],[np.sin(thetaY), 0, np.cos(thetaY)]])
     Rz = np.vstack(([np.cos(thetaZ), np.sin(thetaZ), 0],[-np.sin(thetaZ), np.cos(thetaZ), 0],[0,0,1]))
-    R_3x3 = Rx*Ry*Rz
- 
-    M = np.vstack((np.hstack((R_3x3*S_3x3, T.reshape(-1,1))),[0,0,0,1]))
+    R_3x3 = np.dot(np.dot(Rx,Ry),Rz) 
+    M = np.vstack((np.hstack((np.dot(R_3x3,S_3x3), T.reshape(-1,1))),[0,0,0,1]))
     return M
 
 # ---------------------
 # Pipeline Operations
 def TaskRegression(niiImg, flavor, masks, imgInfo):
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
     trials = get_EVs(buildpath(), flavor[0])
     frame_times = np.arange(nTRs) * TR
     d = {
@@ -749,7 +748,6 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, 'func', 
 		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
     
-    confoundsFile = op.join(config.DATADIR, 'fmriprep', config.subject, )
     data = pd.read_csv(confoundsFile, delimiter='\t')
     data = data.fillna(0)
     if flavor[0] == 'R dR':
@@ -769,7 +767,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         X4 = X2 ** 2
         X = np.hstack([X1,X2,X3,X4]) 
     elif flavor[0] == 'censoring':
-        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+        nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
         X = np.empty((nTRs, 0))
     else:
         print 'Wrong flavor, using default regressors: R dR'
@@ -781,11 +779,11 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         
     # if filtering has already been performed, regressors need to be filtered too
     if len(config.filtering)>0 and X.size > 0:
-        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+        nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
         X = filter_regressors(X, config.filtering, nTRs, TR)  
         
     if config.doScrubbing:
-        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+        nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
         toCensor = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
         npts = toCensor.size
         if npts==1:
@@ -804,7 +802,8 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     - https://github.com/poldrack/fmriqa/blob/master/compute_fd.py
     """
     thr = flavor[1]
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
+    maskAll, maskWM_, maskCSF_, maskGM_ = masks
 
     if flavor[0] == 'FD+DVARS':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
@@ -825,14 +824,47 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         dt = np.concatenate((np.zeros((dt.shape[0],1),dtype=np.float32), dt), axis=1)
         scoreDVARS = np.sqrt(np.mean(dt**2,0)) 
     elif flavor[0] == 'RMS':
-        RelRMSFile = op.join(buildpath(), config.movementRelativeRMSFile)
-        score = np.loadtxt(RelRMSFile)
+        if hasattr(config, 'session') and config.session:
+            confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session,'func', 
+		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
+        else:
+            confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, 'func', 
+		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
+        data = pd.read_csv(confoundsFile, delimiter='\t')
+        data = data.fillna(0)
+        regs = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+        rmsdiff = np.zeros((nTRs, 1))
+        idx_maskall = np.unravel_index(np.where(maskAll), [nRows,nCols,nSlices], order='F')
+        minz, maxz = np.min(idx_maskall[2]), np.max(idx_maskall[2])
+        miny, maxy = np.min(idx_maskall[1]), np.max(idx_maskall[1])
+        minx, maxx = np.min(idx_maskall[0]), np.max(idx_maskall[0])
+        xdim = header.structarr['pixdim'][1]
+        ydim = header.structarr['pixdim'][2]
+        zdim = header.structarr['pixdim'][3]
+        for i in range(1,nTRs):
+            sumdistsq = 0.0
+            nvox = 0.0
+            cvec = np.zeros((4,1))
+            cvec[3] = 1
+            aff1 = get_affine(regs[i,3:6], regs[i,:3])
+            aff2 = get_affine(regs[i-1,3:6], regs[i-1,:3])
+            for z in range(minz,maxz+1):    
+                for y in range(miny,maxy+1):    
+                    for x in range(minx,maxx+1):    
+                        idx = np.ravel_multi_index([x,y,z],[nRows,nCols,nSlices], order='F')
+                        if maskAll[idx] > 0.5:
+                            cvec[0], cvec[1], cvec[2] = x*xdim, y*ydim, x*zdim
+                            dist = linalg.norm(np.dot((aff1-aff2),cvec),2)
+                            sumdistsq += dist*dist
+                            nvox += 1
+            rmsdiff[i] = np.sqrt(sumdistsq/nvox)
+        score = rmsdiff
     else:
         print 'Wrong scrubbing flavor. Nothing was done'
         return niiImg[0],niiImg[1]
     
     if flavor[0] == 'FD+DVARS':
-        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+        nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
         # as in Siegel et al. 2016
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         thr2 = flavor[2]
@@ -882,7 +914,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
 
 def TissueRegression(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
     
     if config.isCifti:
         volData = niiImg[1]
@@ -947,7 +979,7 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         
 def Detrending(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
     nPoly = flavor[1] + 1
     
     if config.isCifti:
@@ -1013,7 +1045,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
    
 def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
 
     if config.doScrubbing:
         censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
@@ -1731,12 +1763,12 @@ def runPipeline():
                 if ((step[0]=='TissueRegression' and 'GM' in Flavors[i][0] and 'wholebrain' not in Flavors[i][0]) or
                    (step[0]=='MotionRegression' and 'nonaggr' in Flavors[i][0])): 
                     #regression constrained to GM
-                    data, volData = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                    data, volData = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                 else:
-                    r0 = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                    r0 = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                     data = regress(data, nTRs, TR, r0, config.preWhitening)
             else:
-                data, volData = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                data, volData = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
         else:
             # When multiple regression steps have the same order, all the regressors are combined
             # and a single regression is performed (other operations are executed in order)
@@ -1747,12 +1779,12 @@ def runPipeline():
                     if ((opr=='TissueRegression' and 'GM' in Flavors[i][j] and 'wholebrain' not in Flavors[i][j]) or
                        (opr=='MotionRegression' and 'nonaggr' in Flavors[i][j])): 
                         #regression constrained to GM
-                        data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                        data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                     else:    
-                        r0 = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                        r0 = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                         r = np.append(r, r0, axis=1)
                 else:
-                    data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                    data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
             if r.shape[1] > 0:
                 data = regress(data, nTRs, TR, r, config.preWhitening)    
         data[np.isnan(data)] = 0
