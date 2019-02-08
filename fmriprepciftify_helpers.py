@@ -753,8 +753,6 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
     if flavor[0] == 'R dR':
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
-        X1 = signal.detrend(X1,axis=0,type='constant') # demean
-        X1 = signal.detrend(X1,axis=0,type='linear') # linear detrending
 	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
         X = np.hstack([X1,X2]) 
         X = signal.detrend(X,axis=0,type='constant') # demean
@@ -762,12 +760,12 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
     elif flavor[0] == 'R dR R^2 dR^2':
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
-        X1 = signal.detrend(X1,axis=0,type='constant') # demean
-        X1 = signal.detrend(X1,axis=0,type='linear') # linear detrending
 	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
-        X3 = X1 ** 2
-        X4 = X2 ** 2
-        X = np.hstack([X1,X2,X3,X4]) 
+        X12 = np.hstack([X1,X2]) 
+        X12 = signal.detrend(X12,axis=0,type='constant') # demean
+        X12 = signal.detrend(X12,axis=0,type='linear') # linear detrending
+        X34 = X12 ** 2
+        X = np.hstack([X12,X34]) 
     elif flavor[0] == 'censoring':
         nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
         X = np.empty((nTRs, 0))
@@ -775,8 +773,6 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         print 'Wrong flavor, using default regressors: R dR'
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
-        X1 = signal.detrend(X1,axis=0,type='constant') # demean
-        X1 = signal.detrend(X1,axis=0,type='linear') # linear detrending
 	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
         X = np.hstack([X1,X2]) 
         X = signal.detrend(X,axis=0,type='constant') # demean
