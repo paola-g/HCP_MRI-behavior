@@ -74,8 +74,8 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
-    #return op.join(config.DATADIR)
+    #return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
+    return op.join(config.DATADIR)
 
 
 #----------------------------------
@@ -1216,7 +1216,7 @@ def parcellate(overwrite=False):
     if (not op.isfile(alltsFile)) or overwrite:
         # read denoised volume
         if not config.isCifti:
-            data, nRows, nCols, nSlices, nTRs, affine, TR = load_img(config.fmriFile_dn, maskAll)
+            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
         else:
             if not op.isfile(config.fmriFile_dn.replace('.dtseries.nii','.tsv')):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,
