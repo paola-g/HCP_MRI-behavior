@@ -97,6 +97,20 @@ def outpath():
 
     return outPath
 
+def get_confounds():
+    # fields from fmriprep: csf	white_matter global_signal std_dvars dvars framewise_displacement 
+    # t_comp_cor_00 t_comp_cor_01 t_comp_cor_02 t_comp_cor_03 t_comp_cor_04 t_comp_cor_05
+    # a_comp_cor_00 a_comp_cor_01 a_comp_cor_02 a_comp_cor_03 a_comp_cor_04 a_comp_cor_05	
+    # cosine00 cosine01 cosine02 cosine03 trans_x trans_y trans_z rot_x	rot_y rot_z
+    if hasattr(config, 'session') and config.session:
+        confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session,'func', 
+		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
+    else:
+        confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, 'func', 
+		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
+    data = pd.read_csv(confoundsFile, delimiter='\t')
+    data = data.fillna(0)
+    return data
 #----------------------------------
 # EVs for task regression
 #----------------------------------
@@ -741,15 +755,7 @@ def TaskRegression(niiImg, flavor, masks, imgInfo):
     return np.array(DM)
 
 def MotionRegression(niiImg, flavor, masks, imgInfo):
-    if hasattr(config, 'session') and config.session:
-        confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session,'func', 
-		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
-    else:
-        confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, 'func', 
-		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
-    
-    data = pd.read_csv(confoundsFile, delimiter='\t')
-    data = data.fillna(0)
+    data = get_confounds()
     if flavor[0] == 'R dR':
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
@@ -1085,21 +1091,19 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     return niiImg[0],niiImg[1]    
 
 def GlobalSignalRegression(niiImg, flavor, masks, imgInfo):
-    meanAll = np.mean(niiImg[0],axis=0)
-    meanAll = meanAll - np.mean(meanAll)
-    meanAll = meanAll/max(meanAll)
+    GS = np.array(data.loc[:,('global_signal')])
     if flavor[0] == 'GS':
-        return meanAll[:,np.newaxis]
+        return GS[:,np.newaxis]
     elif flavor[0] == 'GS+dt+sq':
-        dtGS = np.zeros(meanAll.shape,dtype=np.float32)
-        dtGS[1:] = np.diff(meanAll, n=1)
-        sqGS = meanAll ** 2
+        dtGS = np.zeros(GS.shape,dtype=np.float32)
+        dtGS[1:] = np.diff(GS, n=1)
+        sqGS = GS ** 2
         sqdtGS = dtGS ** 2
-        X  = np.concatenate((meanAll[:,np.newaxis], dtGS[:,np.newaxis], sqGS[:,np.newaxis], sqdtGS[:,np.newaxis]), axis=1)
+        X  = np.concatenate((GS[:,np.newaxis], dtGS[:,np.newaxis], sqGS[:,np.newaxis], sqdtGS[:,np.newaxis]), axis=1)
         return X
     else:
         print 'Warning! Wrong normalization flavor. Using defalut regressor: GS'
-        return meanAll[:,np.newaxis]
+        return GS[:,np.newaxis]
 
 def VoxelNormalization(niiImg, flavor, masks, imgInfo):
     if flavor[0] == 'zscore':
