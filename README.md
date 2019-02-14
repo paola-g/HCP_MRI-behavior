@@ -160,7 +160,7 @@ Example: `['TissueRegression',        5, ['CompCor', 5, 'WMCSF', 'wholebrain']]`
 
 #### Global Signal Regression
 * <b>GS:</b> the global signal is added as a regressor.
-* <b>GS+dt+sq:</b> the global signal with its derivative and square term are added as regressors.
+* <b>GS+dt+sq:</b> the global signal with its derivative and square terms of global signal and derivative are added as regressors.
 
 Example: `['GlobalSignalRegression',      6, ['GS+dt+sq']]`
 #### Temporal Filtering
