@@ -453,7 +453,7 @@ def makeTissueMasks(overwrite=False,precomputed=False):
     return maskAll, maskWM_, maskCSF_, maskGM_
 
 
-def extract_noise_components(niiImg, WMmask, CSFmask, num_components=5, flavor=None):
+def extract_noise_components(niiImg, WMmask, CSFmask, num_components=6, flavor=None):
     """
     Largely based on https://github.com/nipy/nipype/blob/master/examples/
     rsfmri_vol_surface_preprocessing_nipy.py#L261
@@ -469,19 +469,23 @@ def extract_noise_components(niiImg, WMmask, CSFmask, num_components=5, flavor=N
     components: n_time_points x regressors
     """
     if flavor == 'WMCSF' or flavor == None:
-        niiImgWMCSF = niiImg[np.logical_or(WMmask,CSFmask),:] 
-
-        niiImgWMCSF[np.isnan(np.sum(niiImgWMCSF, axis=1)), :] = 0
-        # remove mean and normalize by variance
-        # voxel_timecourses.shape == [nvoxels, time]
-        X = niiImgWMCSF.T
-        stdX = np.std(X, axis=0)
-        stdX[stdX == 0] = 1.
-        stdX[np.isnan(stdX)] = 1.
-        stdX[np.isinf(stdX)] = 1.
-        X = (X - np.mean(X, axis=0)) / stdX
-        u, _, _ = linalg.svd(X, full_matrices=False)
-        components = u[:, :num_components]
+        if num_components==6:
+            data = get_confounds()
+            components = data.loc[:,('a_comp_cor_00', 'a_comp_cor_01', 'a_comp_cor_02', 
+                                     'a_comp_cor_03', 'a_comp_cor_04', 'a_comp_cor_05')]
+	else:
+            niiImgWMCSF = niiImg[np.logical_or(WMmask,CSFmask),:] 
+            niiImgWMCSF[np.isnan(np.sum(niiImgWMCSF, axis=1)), :] = 0
+            # remove mean and normalize by variance
+            # voxel_timecourses.shape == [nvoxels, time]
+            X = niiImgWMCSF.T
+            stdX = np.std(X, axis=0)
+            stdX[stdX == 0] = 1.
+            stdX[np.isnan(stdX)] = 1.
+            stdX[np.isinf(stdX)] = 1.
+            X = (X - np.mean(X, axis=0)) / stdX
+            u, _, _ = linalg.svd(X, full_matrices=False)
+            components = u[:, :num_components]
     elif flavor == 'WM+CSF':    
         niiImgWM = niiImg[WMmask,:] 
         niiImgWM[np.isnan(np.sum(niiImgWM, axis=1)), :] = 0
@@ -923,7 +927,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
 def TissueRegression(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
     nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
-    
+    data = get_confounds()    
     if config.isCifti:
         volData = niiImg[1]
     else:
