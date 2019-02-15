@@ -1088,6 +1088,10 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         niiImg[0] = signal.lfilter(w,1,data)
         if niiImg[1] is not None:
             niiImg[1] = signal.lfilter(w,1,data2)
+    elif flavor[0] == 'DCT':
+        data = get_confounds()
+        X = data.filter(regex=("cosine*"))
+        return X
     else:
         print 'Warning! Wrong temporal filtering flavor. Nothing was done'    
         return niiImg[0],niiImg[1]
@@ -1770,7 +1774,7 @@ def runPipeline():
         print 'Step '+str(i)+' '+str(step)
         if len(step) == 1:
             # Atomic operations
-            if 'Regression' in step[0] or ('wholebrain' in Flavors[i][0]):
+            if 'Regression' in step[0] or ('TemporalFiltering' in step[0] and 'DCT' in Flavors[i][0]) or ('wholebrain' in Flavors[i][0]):
                 if ((step[0]=='TissueRegression' and 'GM' in Flavors[i][0] and 'wholebrain' not in Flavors[i][0]) or
                    (step[0]=='MotionRegression' and 'nonaggr' in Flavors[i][0])): 
                     #regression constrained to GM
@@ -1786,7 +1790,7 @@ def runPipeline():
             r = np.empty((nTRs, 0))
             for j in range(len(step)):
                 opr = step[j]
-                if 'Regression' in opr or ('wholebrain' in Flavors[i][j]):
+                if 'Regression' in opr or ('TemporalFiltering' in opr and 'DCT' in Flavors[i][j]) or ('wholebrain' in Flavors[i][j]):
                     if ((opr=='TissueRegression' and 'GM' in Flavors[i][j] and 'wholebrain' not in Flavors[i][j]) or
                        (opr=='MotionRegression' and 'nonaggr' in Flavors[i][j])): 
                         #regression constrained to GM
