@@ -933,7 +933,7 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
 
 
     if flavor[0] == 'CompCor':
-        if len(flavor < 4) and flavor[2] == 'fmriprep': # use fmriprep output
+        if flavor[1] == 'fmriprep': # use fmriprep output
             X = extract_noise_components()
         else:
             X = extract_noise_components(volData, maskWM_, maskCSF_, num_components=flavor[1], flavor=flavor[2])
