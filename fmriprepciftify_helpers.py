@@ -815,32 +815,11 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
 
     if flavor[0] == 'FD+DVARS':
-        motionFile = op.join(buildpath(), config.movementRegressorsFile)
-        dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
-        headradius=50 #50mm as in Powers et al. 2012
-        disp=dmotpars.copy()
-        disp[:,3:]=np.pi*headradius*2*(disp[:,3:]/360)
-        score=np.sum(disp,1)
-        # pcSigCh
-        meanImg = np.mean(niiImg[0],axis=1)[:,np.newaxis]
-        close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
-        if close0.shape[0] > 0:
-            meanImg[close0,0] = np.max(np.abs(niiImg[0][close0,:]),axis=1)
-            niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
-        niiImg2 = 100 * (niiImg[0] - meanImg) / meanImg
-        niiImg2[np.where(np.isnan(niiImg2))] = 0
-        dt = np.diff(niiImg2, n=1, axis=1)
-        dt = np.concatenate((np.zeros((dt.shape[0],1),dtype=np.float32), dt), axis=1)
-        scoreDVARS = np.sqrt(np.mean(dt**2,0)) 
+        data = get_counfounds()
+        score = np.array(data['framewise_displacement'])
+        scoreDVARS = np.array(data['dvars'])
     elif flavor[0] == 'RMS':
-        if hasattr(config, 'session') and config.session:
-            confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session,'func', 
-		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
-        else:
-            confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, 'func', 
-		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
-        data = pd.read_csv(confoundsFile, delimiter='\t')
-        data = data.fillna(0)
+        data = get_confounds()
         regs = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         regs[:,3:] = np.degrees(regs[:,3:]) # as in HCP
         rmsdiff = np.zeros((nTRs, 1))
@@ -938,18 +917,18 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         else:
             X = extract_noise_components(volData, maskWM_, maskCSF_, num_components=flavor[1], flavor=flavor[2])
     elif flavor[0] == 'WMCSF':
-        meanWM = data.loc[:,'white_matter']
+        meanWM = np.array(data['white_matter'])
         meanWM = meanWM - np.mean(meanWM)
         meanWM = meanWM/max(meanWM)
-        meanCSF = data.loc[:,'csf']
+        meanCSF = np.array(data[:,'csf'])
         meanCSF = meanCSF - np.mean(meanCSF)
         meanCSF = meanCSF/max(meanCSF)
         X  = np.concatenate((meanWM[:,np.newaxis], meanCSF[:,np.newaxis]), axis=1)
     elif flavor[0] == 'WMCSF+dt+sq':
-        meanWM = data.loc[:,'white_matter']
+        meanWM = np.array(data['white_matter'])
         meanWM = meanWM - np.mean(meanWM)
         meanWM = meanWM/max(meanWM)
-        meanCSF = data.loc[:,'csf']
+        meanCSF = np.array(data[:,'csf'])
         meanCSF = meanCSF - np.mean(meanCSF)
         meanCSF = meanCSF/max(meanCSF)
         dtWM=np.zeros(meanWM.shape,dtype=np.float32)
@@ -1089,9 +1068,9 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         if niiImg[1] is not None:
             niiImg[1] = signal.lfilter(w,1,data2)
     elif flavor[0] == 'DCT':
-        data = get_confounds()
-        X = data.filter(regex=("cosine*"))
-        return X
+        X = get_confounds()
+        X = X.filter(regex=("cosine*"))
+        return np.array(X)
     else:
         print 'Warning! Wrong temporal filtering flavor. Nothing was done'    
         return niiImg[0],niiImg[1]
@@ -1100,7 +1079,7 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     return niiImg[0],niiImg[1]    
 
 def GlobalSignalRegression(niiImg, flavor, masks, imgInfo):
-    GS = np.array(data.loc[:,('global_signal')])
+    GS = np.array(data['global_signal'])
     if flavor[0] == 'GS':
         return GS[:,np.newaxis]
     elif flavor[0] == 'GS+dt+sq':
