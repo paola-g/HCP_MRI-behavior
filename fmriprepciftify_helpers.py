@@ -937,18 +937,18 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
     if flavor[0] == 'CompCor':
         X = extract_noise_components(volData, maskWM_, maskCSF_, num_components=flavor[1], flavor=flavor[2])
     elif flavor[0] == 'WMCSF':
-        meanWM = np.mean(np.float32(volData[maskWM_,:]),axis=0)
+        meanWM = data.loc[:,'white_matter']
         meanWM = meanWM - np.mean(meanWM)
         meanWM = meanWM/max(meanWM)
-        meanCSF = np.mean(np.float32(volData[maskCSF_,:]),axis=0)
+        meanCSF = data.loc[:,'csf']
         meanCSF = meanCSF - np.mean(meanCSF)
         meanCSF = meanCSF/max(meanCSF)
         X  = np.concatenate((meanWM[:,np.newaxis], meanCSF[:,np.newaxis]), axis=1)
     elif flavor[0] == 'WMCSF+dt+sq':
-        meanWM = np.mean(np.float32(volData[maskWM_,:]),axis=0)
+        meanWM = data.loc[:,'white_matter']
         meanWM = meanWM - np.mean(meanWM)
         meanWM = meanWM/max(meanWM)
-        meanCSF = np.mean(np.float32(volData[maskCSF_,:]),axis=0)
+        meanCSF = data.loc[:,'csf']
         meanCSF = meanCSF - np.mean(meanCSF)
         meanCSF = meanCSF/max(meanCSF)
         dtWM=np.zeros(meanWM.shape,dtype=np.float32)
