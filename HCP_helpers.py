@@ -74,8 +74,8 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    #return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
-    return op.join(config.DATADIR)
+    return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
+    #return op.join(config.DATADIR)
 
 
 #----------------------------------
@@ -690,7 +690,7 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
 # ---------------------
 # Pipeline Operations
 def TaskRegression(niiImg, flavor, masks, imgInfo):
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
     trials = get_EVs(buildpath(), flavor[0])
     # sometimes an EV is empty
     # need to drop it
@@ -721,7 +721,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         data_squared = data ** 2
         X = np.concatenate((data, data_squared), axis=1)
     elif flavor[0] == 'censoring':
-        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+        nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
         X = np.empty((nTRs, 0))
     else:
         print 'Wrong flavor, using default regressors: R dR'
@@ -729,11 +729,11 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         
     # if filtering has already been performed, regressors need to be filtered too
     if len(config.filtering)>0 and X.size > 0:
-        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+        nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
         X = filter_regressors(X, config.filtering, nTRs, TR)  
         
     if config.doScrubbing:
-        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+        nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
         toCensor = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
         npts = toCensor.size
         if npts==1:
@@ -752,7 +752,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     - https://github.com/poldrack/fmriqa/blob/master/compute_fd.py
     """
     thr = flavor[1]
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
 
     if flavor[0] == 'FD+DVARS':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
@@ -772,25 +772,21 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         dt = np.diff(niiImg2, n=1, axis=1)
         dt = np.concatenate((np.zeros((dt.shape[0],1),dtype=np.float32), dt), axis=1)
         scoreDVARS = np.sqrt(np.mean(dt**2,0)) 
-    elif flavor[0] == 'RMS':
-        RelRMSFile = op.join(buildpath(), config.movementRelativeRMSFile)
-        score = np.loadtxt(RelRMSFile)
-    else:
-        print 'Wrong scrubbing flavor. Nothing was done'
-        return niiImg[0],niiImg[1]
-    
-    if flavor[0] == 'FD+DVARS':
-        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
         # as in Siegel et al. 2016
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         thr2 = flavor[2]
-        censDVARS = scoreDVARS > 1.05 * np.median(scoreDVARS)
+        censDVARS = scoreDVARS > (100+thr2)/100 * np.median(scoreDVARS)
         censored = np.where(np.logical_or(np.ravel(cleanFD)>thr,censDVARS))
         np.savetxt(op.join(buildpath(), 'FD_{}.txt'.format(config.pipelineName)), cleanFD, delimiter='\n', fmt='%d')
         np.savetxt(op.join(buildpath(), 'DVARS_{}.txt'.format(config.pipelineName)), scoreDVARS, delimiter='\n', fmt='%d')
-    else:
+    elif flavor[0] == 'RMS':
+        RelRMSFile = op.join(buildpath(), config.movementRelativeRMSFile)
+        score = np.loadtxt(RelRMSFile)
         censored = np.where(score>thr)
         np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
+    else:
+        print 'Wrong scrubbing flavor. Nothing was done'
+        return niiImg[0],niiImg[1]
     
     if (len(flavor)>3 and flavor[0] == 'FD+DVARS'):
         pad = flavor[3]
@@ -830,7 +826,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
 
 def TissueRegression(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
     
     if config.isCifti:
         volData = niiImg[1]
@@ -895,7 +891,7 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         
 def Detrending(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
     nPoly = flavor[1] + 1
     
     if config.isCifti:
@@ -961,7 +957,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
    
 def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
-    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+    nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
 
     if config.doScrubbing:
         censored = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))

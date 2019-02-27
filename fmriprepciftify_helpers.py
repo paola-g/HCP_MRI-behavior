@@ -74,11 +74,11 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-#    if hasattr(config, 'session') and config.session:
-#        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.subject+'_'+config.session+'_'+config.fmriRun)
-#    else:
-#        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
-    return op.join(config.DATADIR)
+    if hasattr(config, 'session') and config.session:
+        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.session+'_'+config.fmriRun)
+    else:
+        return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
+#    return op.join(config.DATADIR)
 
 #----------------------------------
 # function to build dinamycally output path (BIDS-like) 
@@ -109,7 +109,7 @@ def get_confounds():
         confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, 'func', 
 		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
     data = pd.read_csv(confoundsFile, delimiter='\t')
-    data = data.fillna(0)
+    data.replace('n/a', 0, inplace=True)
     return data
 #----------------------------------
 # EVs for task regression
@@ -815,9 +815,16 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
 
     if flavor[0] == 'FD+DVARS':
-        data = get_counfounds()
-        score = np.array(data['framewise_displacement'])
-        scoreDVARS = np.array(data['dvars'])
+        data = get_confounds()
+        score = np.array(data['framewise_displacement']).astype(float)
+        scoreDVARS = np.array(data['dvars']).astype(float)
+        # as in Siegel et al. 2016
+        cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
+        thr2 = flavor[2]
+        censDVARS = scoreDVARS > 1.05 * np.median(scoreDVARS)
+        censored = np.where(np.logical_or(np.ravel(cleanFD)>thr,censDVARS))
+        np.savetxt(op.join(outpath(), 'FD.txt'), cleanFD, delimiter='\n', fmt='%d')
+        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%d')
     elif flavor[0] == 'RMS':
         data = get_confounds()
         regs = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
@@ -848,22 +855,11 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
                             nvox += 1
             rmsdiff[i] = np.sqrt(sumdistsq/nvox)
         score = rmsdiff
+        censored = np.where(score>thr)
+        np.savetxt(op.join(outpath(), '{}.txt'.format(flavor[0])), score, delimiter='\n', fmt='%d')
     else:
         print 'Wrong scrubbing flavor. Nothing was done'
         return niiImg[0],niiImg[1]
-    
-    if flavor[0] == 'FD+DVARS':
-        nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
-        # as in Siegel et al. 2016
-        cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
-        thr2 = flavor[2]
-        censDVARS = scoreDVARS > 1.05 * np.median(scoreDVARS)
-        censored = np.where(np.logical_or(np.ravel(cleanFD)>thr,censDVARS))
-        np.savetxt(op.join(buildpath(), 'FD_{}.txt'.format(config.pipelineName)), cleanFD, delimiter='\n', fmt='%d')
-        np.savetxt(op.join(buildpath(), 'DVARS_{}.txt'.format(config.pipelineName)), scoreDVARS, delimiter='\n', fmt='%d')
-    else:
-        censored = np.where(score>thr)
-        np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
     
     if (len(flavor)>3 and flavor[0] == 'FD+DVARS'):
         pad = flavor[3]
@@ -1835,10 +1831,11 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
     if hasattr(config,'fmriFileTemplate'):
         config.fmriFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#suffix#',config.suffix))
     else:
+	if  hasattr(config,'session'): prefix = config.sessioni+'_' else prefix = ''
         if config.isCifti:
-            config.fmriFile = op.join(buildpath(), config.fmriRun+'_Atlas'+config.suffix+'.dtseries.nii')
+            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas'+config.suffix+'.dtseries.nii')
         else:
-            config.fmriFile = op.join(buildpath(), config.fmriRun+config.suffix+'.nii.gz')
+            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+config.suffix+'.nii.gz')
     
     if not op.isfile(config.fmriFile):
         print config.subject, 'missing'
