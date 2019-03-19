@@ -22,6 +22,8 @@ class config(object):
     parcellationName   = ''
     parcellationFile   = ''
     outDir             = ''
+    melodicFolder      =  = op.join('#fMRIrun#_hp2000.ica','filtered_func_data.ica') #the code #fMRIrun# will be replaced
+
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -715,14 +717,104 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
     # assumes that data is organized as in the HCP
     motionFile = op.join(buildpath(), config.movementRegressorsFile)
     data = np.genfromtxt(motionFile)
-    if flavor[0] == 'R dR':
+    if flavor[0] == 'R':
+        X = data[:,:6]
+    elif flavor[0] == 'R dR':
         X = data
+    elif flavor[0] == 'R R^2':
+        data = data[:,:6]
+        data_squared = data ** 2
+        X = np.concatenate((data, data_squared), axis=1)
     elif flavor[0] == 'R dR R^2 dR^2':
         data_squared = data ** 2
         X = np.concatenate((data, data_squared), axis=1)
+    elif flavor[0] == 'R R^2 R-1 R-1^2':
+        data = data[:,:6]
+        data_roll = np.roll(data, 1, axis=0)
+        data_squared = data ** 2
+        data_roll[0] = 0
+        data_roll_squared = data_roll ** 2
+        X = np.concatenate((data, data_squared, data_roll, data_roll_squared), axis=1)
+    elif flavor[0] == 'R R^2 R-1 R-1^2 R-2 R-2^2':
+        data[:,:6]
+        data_roll = np.roll(data, 1, axis=0)
+        data_squared = data ** 2
+        data_roll[0] = 0
+        data_roll_squared = data_roll ** 2
+        data_roll2 = np.roll(data_roll, 1, axis=0)
+        data_roll2[0] = 0
+        data_roll2_squared = data_roll2 ** 2
+        X = np.concatenate((data, data_squared, data_roll, data_roll_squared, data_roll2, data_roll2_squared), axis=1)
     elif flavor[0] == 'censoring':
         nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
         X = np.empty((nTRs, 0))
+    elif flavor[0] == 'ICA-AROMA':
+        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+        fslDir = op.join(environ["FSLDIR"],'bin','')
+        if hasattr(config,'melodicFolder'):
+            icaOut = op.join(buildpath(),config.melodicFolder)
+        else:
+            icaOut = op.join(buildpath(), 'icaOut')
+            try:
+                mkdir(icaOut)
+            except OSError:
+                pass
+            if not op.isfile(op.join(icaOut,'melodic_IC.nii.gz')):
+                os.system(' '.join([os.path.join(fslDir,'melodic'),
+                    '--in=' + config.fmriFile, 
+                    '--outdir=' + icaOut, 
+                    '--dim=' + str(min(250,np.int(data.shape[0]/2))),
+                    '--Oall --nobet ',
+                    '--tr=' + str(TR)]))
+
+        melIC_MNI = op.join(icaOut,'melodic_IC.nii.gz')
+        mc = op.join(buildpath(), config.movementRegressorsFile)
+        melmix = op.join(icaOut,'melodic_mix')
+        melFTmix = op.join(icaOut,'melodic_FTmix')
+        
+        edgeFract, csfFract = feature_spatial(fslDir, icaOut, buildpath(), melIC_MNI)
+        maxRPcorr = feature_time_series(melmix, mc)
+        HFC = feature_frequency(melFTmix, TR)
+        motionICs = classification(icaOut, maxRPcorr, edgeFract, HFC, csfFract)
+        
+        if motionICs.ndim > 0:
+            melmix = op.join(icaOut,'melodic_mix')
+            if len(flavor)>1:
+                denType = flavor[1]
+            else:
+                denType = 'aggr'
+            if denType == 'aggr':
+                X = np.loadtxt(melmix)[:,motionICs]
+            elif denType == 'nonaggr':  
+                # Partial regression
+                X = np.loadtxt(melmix)
+                # if filtering has already been performed, regressors need to be filtered too
+                if len(config.filtering)>0:
+                    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+                    X = filter_regressors(X, config.filtering, nTRs, TR)  
+
+                if config.doScrubbing:
+                    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+                    toCensor = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
+                    npts = toCensor.size
+                    if npts==1:
+                        toCensor=np.reshape(toCensor,(npts,))
+                    toReg = np.zeros((nTRs, npts),dtype=np.float32)
+                    for i in range(npts):
+                        toReg[toCensor[i],i] = 1
+                    X = np.concatenate((X, toReg), axis=1)
+                    
+                nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+                niiImg[0] = partial_regress(niiImg[0], nTRs, TR, X, motionICs, config.preWhitening)
+                if niiImg[1] is not None:
+                    niiImg[1] = partial_regress(niiImg[1], nTRs, TR, X, motionICs, config.preWhitening)
+                return niiImg[0],niiImg[1]
+            else:
+                print 'Warning! Wrong ICA-AROMA flavor. Using default full regression.'
+                X = np.loadtxt(melmix)[:,motionICs]
+        else:
+            print 'ICA-AROMA: None of the components was classified as motion, so no denoising is applied.'
+            X = np.empty((nTRs, 0))
     else:
         print 'Wrong flavor, using default regressors: R dR'
         X = data
@@ -754,13 +846,36 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     thr = flavor[1]
     nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
 
-    if flavor[0] == 'FD+DVARS':
+    if flavor[0] == 'DVARS':
+        # pcSigCh
+        meanImg = np.mean(niiImg[0],axis=1)[:,np.newaxis]
+        close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
+        if close0.shape[0] > 0:
+            meanImg[close0,0] = np.max(np.abs(niiImg[0][close0,:]),axis=1)
+            niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
+        niiImg2 = 100 * (niiImg[0] - meanImg) / meanImg
+        niiImg2[np.where(np.isnan(niiImg2))] = 0
+        dt = np.diff(niiImg2, n=1, axis=1)
+        dt = np.concatenate((np.zeros((dt.shape[0],1),dtype=np.float32), dt), axis=1)
+        score = np.sqrt(np.mean(dt**2,0))        
+        censored = np.where(score>thr)
+        np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
+    elif flavor[0] == 'FD':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
         dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
         headradius=50 #50mm as in Powers et al. 2012
         disp=dmotpars.copy()
         disp[:,3:]=np.pi*headradius*2*(disp[:,3:]/360)
         score=np.sum(disp,1)
+        censored = np.where(score>thr)
+        np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
+    elif flavor[0] == 'FD+DVARS':
+        motionFile = op.join(buildpath(), config.movementRegressorsFile)
+        dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
+        headradius=50 #50mm as in Powers et al. 2012
+        disp=dmotpars.copy()
+        disp[:,3:]=np.pi*headradius*2*(disp[:,3:]/360)
+        score=np.sum(np.abs(disp,1))
         # pcSigCh
         meanImg = np.mean(niiImg[0],axis=1)[:,np.newaxis]
         close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
@@ -777,8 +892,8 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         thr2 = flavor[2]
         censDVARS = scoreDVARS > (100+thr2)/100 * np.median(scoreDVARS)
         censored = np.where(np.logical_or(np.ravel(cleanFD)>thr,censDVARS))
-        np.savetxt(op.join(buildpath(), 'FD_{}.txt'.format(config.pipelineName)), cleanFD, delimiter='\n', fmt='%d')
-        np.savetxt(op.join(buildpath(), 'DVARS_{}.txt'.format(config.pipelineName)), scoreDVARS, delimiter='\n', fmt='%d')
+        np.savetxt(op.join(buildpath(), 'FD_{}.txt'.format(config.pipelineName)), cleanFD, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(buildpath(), 'DVARS_{}.txt'.format(config.pipelineName)), scoreDVARS, delimiter='\n', fmt='%f')
     elif flavor[0] == 'RMS':
         RelRMSFile = op.join(buildpath(), config.movementRelativeRMSFile)
         score = np.loadtxt(RelRMSFile)
