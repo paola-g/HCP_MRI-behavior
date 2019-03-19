@@ -470,7 +470,7 @@ def extract_noise_components(niiImg=None, WMmask=None, CSFmask=None, num_compone
     """
     if flavor == 'fmriprep' or flavor == None:
         data = get_confounds()
-        components = data.filter(regex=("a_comp_cor_*"))
+        components = np.array(data.filter(regex=("a_comp_cor_*")))
     if flavor == 'WMCSF':
         niiImgWMCSF = niiImg[np.logical_or(WMmask,CSFmask),:] 
         niiImgWMCSF[np.isnan(np.sum(niiImgWMCSF, axis=1)), :] = 0
@@ -821,10 +821,11 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         # as in Siegel et al. 2016
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         thr2 = flavor[2]
-        censDVARS = scoreDVARS > 1.05 * np.median(scoreDVARS)
+        censDVARS = scoreDVARS > (100+thr2)/100* np.median(scoreDVARS)
         censored = np.where(np.logical_or(np.ravel(cleanFD)>thr,censDVARS))
-        np.savetxt(op.join(outpath(), 'FD.txt'), cleanFD, delimiter='\n', fmt='%d')
-        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%d')
+        np.savetxt(op.join(outpath(), 'FD.txt'), score, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'cleanFD.txt'), cleanFD, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
     elif flavor[0] == 'RMS':
         data = get_confounds()
         regs = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
@@ -913,18 +914,18 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         else:
             X = extract_noise_components(volData, maskWM_, maskCSF_, num_components=flavor[1], flavor=flavor[2])
     elif flavor[0] == 'WMCSF':
-        meanWM = np.array(data['white_matter'])
+        meanWM = np.array(data.loc[:,'white_matter'])
         meanWM = meanWM - np.mean(meanWM)
         meanWM = meanWM/max(meanWM)
-        meanCSF = np.array(data[:,'csf'])
+        meanCSF = np.array(data.loc[:,'csf'])
         meanCSF = meanCSF - np.mean(meanCSF)
         meanCSF = meanCSF/max(meanCSF)
         X  = np.concatenate((meanWM[:,np.newaxis], meanCSF[:,np.newaxis]), axis=1)
     elif flavor[0] == 'WMCSF+dt+sq':
-        meanWM = np.array(data['white_matter'])
+        meanWM = np.array(data.loc[:,'white_matter'])
         meanWM = meanWM - np.mean(meanWM)
         meanWM = meanWM/max(meanWM)
-        meanCSF = np.array(data[:,'csf'])
+        meanCSF = np.array(data.loc[:,'csf'])
         meanCSF = meanCSF - np.mean(meanCSF)
         meanCSF = meanCSF/max(meanCSF)
         dtWM=np.zeros(meanWM.shape,dtype=np.float32)
@@ -1065,7 +1066,11 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
             niiImg[1] = signal.lfilter(w,1,data2)
     elif flavor[0] == 'CompCor':
         X = get_confounds()
-        X = data.filter(regex=("t_comp_cor_*"))
+        X = X.filter(regex=("t_comp_cor_*"))
+        return np.array(X)
+    elif flavor[0] == 'DCT':
+        X = get_confounds()
+        X = X.filter(regex=("cosine*"))
         return np.array(X)
     else:
         print 'Warning! Wrong temporal filtering flavor. Nothing was done'    
@@ -1831,7 +1836,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
     if hasattr(config,'fmriFileTemplate'):
         config.fmriFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#suffix#',config.suffix))
     else:
-	if  hasattr(config,'session'): prefix = config.sessioni+'_' else prefix = ''
+	prefix = config.sessioni+'_' if  hasattr(config,'session')  else ''
         if config.isCifti:
             config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas'+config.suffix+'.dtseries.nii')
         else:
