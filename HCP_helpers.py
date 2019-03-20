@@ -959,6 +959,19 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         meanCSF = meanCSF - np.mean(meanCSF)
         meanCSF = meanCSF/max(meanCSF)
         X  = np.concatenate((meanWM[:,np.newaxis], meanCSF[:,np.newaxis]), axis=1)
+    elif flavor[0] == 'WMCSF+dt':
+        meanWM = np.mean(np.float32(volData[maskWM_,:]),axis=0)
+        meanWM = meanWM - np.mean(meanWM)
+        meanWM = meanWM/max(meanWM)
+        meanCSF = np.mean(np.float32(volData[maskCSF_,:]),axis=0)
+        meanCSF = meanCSF - np.mean(meanCSF)
+        meanCSF = meanCSF/max(meanCSF)
+        dtWM=np.zeros(meanWM.shape,dtype=np.float32)
+        dtWM[1:] = np.diff(meanWM, n=1)
+        dtCSF=np.zeros(meanCSF.shape,dtype=np.float32)
+        dtCSF[1:] = np.diff(meanCSF, n=1)
+        X  = np.concatenate((meanWM[:,np.newaxis], meanCSF[:,np.newaxis], 
+                             dtWM[:,np.newaxis], dtCSF[:,np.newaxis]), axis=1)
     elif flavor[0] == 'WMCSF+dt+sq':
         meanWM = np.mean(np.float32(volData[maskWM_,:]),axis=0)
         meanWM = meanWM - np.mean(meanWM)
@@ -983,6 +996,11 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         meanGM = meanGM - np.mean(meanGM)
         meanGM = meanGM/max(meanGM)
         X = meanGM[:,np.newaxis]
+    elif flavor[0] == 'WM':
+        meanWM = np.mean(np.float32(volData[maskWM_,:]),axis=0)
+        meanWM = meanWM - np.mean(meanWM)
+        meanWM = meanWM/max(meanWM)
+        X = meanWM[:,np.newaxis]   
     else:
         print 'Warning! Wrong tissue regression flavor. Nothing was done'
     
@@ -1102,6 +1120,14 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         niiImg[0] = signal.lfilter(w,1,data)
         if niiImg[1] is not None:
             niiImg[1] = signal.lfilter(w,1,data2)
+    elif flavor[0] == 'DCT':
+        K = dctmtx(nTRs)
+        HPC = 1/flavor[1]
+        LPC = 1/flavor[2]
+        nHP = np.fix(2*(nTRs*TR)/HPC + 1)
+        nLP = np.fix(2*(nTRs*TR)/LPC + 1)
+        K = K[:,np.concatenate((range(1,nHP),range(int(nLP)-1,nTRs)))]
+        return K
     else:
         print 'Warning! Wrong temporal filtering flavor. Nothing was done'    
         return niiImg[0],niiImg[1]
