@@ -170,6 +170,8 @@ Note: if scrubbing has been requested, censored volumes are replaced by linear i
 	2. Specify low pass threshold. </ol>
 * <b>Gaussian:</b> Low pass Gaussian smoothing.
 	1. Specify standard deviation.</ol>
+* <b>DCT:</b> Discrete cosine transform.
+	- Note: this is implemented through regression, in order to be performed in a single regression step together with the removal of other confounds. If this is not the case this step should be performed at the end.</ul>
 
 Example: `['TemporalFiltering',       7, ['Butter', 0.009, 0.08]]`
 
