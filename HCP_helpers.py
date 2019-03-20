@@ -1141,6 +1141,11 @@ def GlobalSignalRegression(niiImg, flavor, masks, imgInfo):
     meanAll = meanAll/max(meanAll)
     if flavor[0] == 'GS':
         return meanAll[:,np.newaxis]
+    elif flavor[0] == 'GS+dt':
+        dtGS=np.zeros(meanAll.shape,dtype=np.float32)
+        dtGS[1:] = np.diff(meanAll, n=1)
+        X  = np.concatenate((meanAll[:,np.newaxis], dtGS[:,np.newaxis]), axis=1)
+        return X
     elif flavor[0] == 'GS+dt+sq':
         dtGS = np.zeros(meanAll.shape,dtype=np.float32)
         dtGS[1:] = np.diff(meanAll, n=1)
@@ -1157,6 +1162,22 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
         niiImg[0] = stats.zscore(niiImg[0], axis=1, ddof=1)
         if niiImg[1] is not None:
             niiImg[1] = stats.zscore(niiImg[1], axis=1, ddof=1)
+    elif flavor[0] == 'pcSigCh':
+        meanImg = np.mean(niiImg[0],axis=1)[:,np.newaxis]
+        close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
+        if close0.shape[0] > 0:
+            meanImg[close0,0] = np.max(np.abs(niiImg[0][close0,:]),axis=1)
+	    niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
+        niiImg[0] = 100 * (niiImg[0] - meanImg) / meanImg
+        niiImg[0][np.where(np.isnan(niiImg[0]))] = 0
+        if niiImg[1] is not None:
+            meanImg = np.mean(niiImg[1],axis=1)[:,np.newaxis]
+            close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
+            if close0.shape[0] > 0:
+                meanImg[close0,0] = np.max(np.abs(niiImg[1][close0,:]),axis=1)
+	        niiImg[1][close0,:] = niiImg[1][close0,:] + meanImg[close0,:]
+            niiImg[1] = 100 * (niiImg[1] - meanImg) / meanImg
+            niiImg[1][np.where(np.isnan(niiImg[1]))] = 0
     elif flavor[0] == 'demean':
         niiImg[0] = niiImg[0] - niiImg[0].mean(1)[:,np.newaxis]
         if niiImg[1] is not None:
