@@ -22,7 +22,8 @@ class config(object):
     parcellationName   = ''
     parcellationFile   = ''
     outDir             = ''
-    melodicFolder      =  = op.join('#fMRIrun#_hp2000.ica','filtered_func_data.ica') #the code #fMRIrun# will be replaced
+    headradius         = 50 #50mm as in Powers et al. 2012
+#    melodicFolder      =  op.join('#fMRIrun#_hp2000.ica','filtered_func_data.ica') #the code #fMRIrun# will be replaced
 
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
@@ -76,8 +77,8 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
-    #return op.join(config.DATADIR)
+    #return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
+    return op.join(config.DATADIR)
 
 
 #----------------------------------
@@ -736,7 +737,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         data_roll_squared = data_roll ** 2
         X = np.concatenate((data, data_squared, data_roll, data_roll_squared), axis=1)
     elif flavor[0] == 'R R^2 R-1 R-1^2 R-2 R-2^2':
-        data[:,:6]
+        data = data[:,:6]
         data_roll = np.roll(data, 1, axis=0)
         data_squared = data ** 2
         data_roll[0] = 0
@@ -749,7 +750,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
         X = np.empty((nTRs, 0))
     elif flavor[0] == 'ICA-AROMA':
-        nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+        nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
         fslDir = op.join(environ["FSLDIR"],'bin','')
         if hasattr(config,'melodicFolder'):
             icaOut = op.join(buildpath(),config.melodicFolder)
@@ -863,19 +864,17 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     elif flavor[0] == 'FD':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
         dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
-        headradius=50 #50mm as in Powers et al. 2012
         disp=dmotpars.copy()
-        disp[:,3:]=np.pi*headradius*2*(disp[:,3:]/360)
+        disp[:,3:]=np.pi*config.headradius*2*(disp[:,3:]/360)
         score=np.sum(disp,1)
         censored = np.where(score>thr)
         np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
     elif flavor[0] == 'FD+DVARS':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
         dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
-        headradius=50 #50mm as in Powers et al. 2012
         disp=dmotpars.copy()
-        disp[:,3:]=np.pi*headradius*2*(disp[:,3:]/360)
-        score=np.sum(np.abs(disp,1))
+        disp[:,3:]=np.pi*config.headradius*2*(disp[:,3:]/360)
+        score=np.sum(disp,1)
         # pcSigCh
         meanImg = np.mean(niiImg[0],axis=1)[:,np.newaxis]
         close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
@@ -1210,9 +1209,8 @@ def computeFD():
     # Frame displacement
     motionFile = op.join(buildpath(), config.movementRegressorsFile)
     dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
-    headradius=50 #50mm as in Powers et al. 2012
     disp=dmotpars.copy()
-    disp[:,3:]=np.pi*headradius*2*(disp[:,3:]/360)
+    disp[:,3:]=np.pi*config.headradius*2*(disp[:,3:]/360)
     score=np.sum(disp,1)
     return score
 

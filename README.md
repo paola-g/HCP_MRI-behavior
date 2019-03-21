@@ -135,6 +135,7 @@ Example: `['MotionRegression',      3, ['R dR']]`
 #### Scrubbing
 Note: this step only flags the volumes to be censored, that are then regressed out in the MotionRegression step.<br>
 Note: uncensored segments of data lasting fewer than 5 contiguous volumes, are flagged for removal as well.
+Note: the default head radius used for computing FD is 50mm (as in Powers et al. 2012). This value can be changed assigning a new value to config.headradius. 
 * <b>FD+DVARS</b>
 	1. Specify a threshold for framewise displacement (FD) in mm.
 	2. Specify a threshold <i>t</i> s.t. volumes with a variance of differentiated signal (DVARS) greater than (100 + <i>t</i>)% of the run median DVARS are flagged for removal.

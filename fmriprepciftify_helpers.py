@@ -743,6 +743,11 @@ def get_affine(R, T, S=None):
 def TaskRegression(niiImg, flavor, masks, imgInfo):
     nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
     trials = get_EVs(buildpath(), flavor[0])
+    # sometimes an EV is empty
+    # need to drop it
+    for k in trials.keys():
+        if trials[k].shape[1]==1:
+            trials.pop(k, None)
     frame_times = np.arange(nTRs) * TR
     d = {
         'onset' : np.hstack([trials[k][:,0] for k in trials.keys()]),
@@ -758,13 +763,25 @@ def TaskRegression(niiImg, flavor, masks, imgInfo):
 
 def MotionRegression(niiImg, flavor, masks, imgInfo):
     data = get_confounds()
-    if flavor[0] == 'R dR':
+    if flavor[0] == 'R':
+        X = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+        X[:,3:] = np.degrees(X[:,3:]) # as in HCP
+        X = signal.detrend(X,axis=0,type='constant') # demean
+        X = signal.detrend(X,axis=0,type='linear') # linear detrending
+    elif flavor[0] == 'R dR':
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
 	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
         X = np.hstack([X1,X2]) 
         X = signal.detrend(X,axis=0,type='constant') # demean
         X = signal.detrend(X,axis=0,type='linear') # linear detrending
+    elif flavor[0] == 'R R^2':
+        X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+        X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
+        X2 = X1 ** 2
+        X = np.hstack([X1,X2]) 
+        X = signal.detrend(X,axis=0,type='constant') # demean
+        X = signal.detrend(X,axis=1,type='linear') # linear detrending
     elif flavor[0] == 'R dR R^2 dR^2':
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
@@ -774,6 +791,27 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         X12 = signal.detrend(X12,axis=0,type='linear') # linear detrending
         X34 = X12 ** 2
         X = np.hstack([X12,X34]) 
+    elif flavor[0] == 'R R^2 R-1 R-1^2':
+        X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+        X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
+        data_roll = np.roll(X1, 1, axis=0)
+        data_squared = X1 ** 2
+        data_roll[0] = 0
+        data_roll_squared = data_roll ** 2
+        X = np.concatenate((X1, data_squared, data_roll, data_roll_squared), axis=1)
+    elif flavor[0] == 'R R^2 R-1 R-1^2 R-2 R-2^2':
+        X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+        X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
+        data_roll = np.roll(X1, 1, axis=0)
+        data_squared = X1 ** 2
+        data_roll[0] = 0
+        data_roll_squared = data_roll ** 2
+        data_roll2 = np.roll(data_roll, 1, axis=0)
+        data_roll2[0] = 0
+        data_roll2_squared = data_roll2 ** 2
+        X = np.concatenate((X1, data_squared, data_roll, data_roll_squared, data_roll2, data_roll2_squared), axis=1)
+    elif flavor[0] == 'censoring':
+        nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
     elif flavor[0] == 'censoring':
         nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
         X = np.empty((nTRs, 0))
@@ -808,13 +846,23 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     """
     Largely based on: 
     - https://git.becs.aalto.fi/bml/bramila/blob/master/bramila_dvars.m
+A
     - https://github.com/poldrack/fmriqa/blob/master/compute_fd.py
     """
     thr = flavor[1]
     nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
 
-    if flavor[0] == 'FD+DVARS':
+    if flavor[0] == 'FD':
+        data = get_confounds()
+        score = np.array(data['framewise_displacement']).astype(float)
+        cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
+        censored = np.where(cleanFD>thr)
+    elif flavor[0] == 'DVARS':
+        data = get_confounds()
+        score = np.array(data['dvars']).astype(float)
+        censored = score > (100+thr)/100* np.median(score)
+    elif flavor[0] == 'FD+DVARS':
         data = get_confounds()
         score = np.array(data['framewise_displacement']).astype(float)
         scoreDVARS = np.array(data['dvars']).astype(float)
@@ -921,6 +969,19 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         meanCSF = meanCSF - np.mean(meanCSF)
         meanCSF = meanCSF/max(meanCSF)
         X  = np.concatenate((meanWM[:,np.newaxis], meanCSF[:,np.newaxis]), axis=1)
+    elif flavor[0] == 'WMCSF+dt':
+        meanWM = np.array(data.loc[:,'white_matter'])
+        meanWM = meanWM - np.mean(meanWM)
+        meanWM = meanWM/max(meanWM)
+        meanCSF = np.array(data.loc[:,'csf'])
+        meanCSF = meanCSF - np.mean(meanCSF)
+        meanCSF = meanCSF/max(meanCSF)
+        dtWM=np.zeros(meanWM.shape,dtype=np.float32)
+        dtWM[1:] = np.diff(meanWM, n=1)
+        dtCSF=np.zeros(meanCSF.shape,dtype=np.float32)
+        dtCSF[1:] = np.diff(meanCSF, n=1)
+        X  = np.concatenate((meanWM[:,np.newaxis], meanCSF[:,np.newaxis], 
+                             dtWM[:,np.newaxis], dtCSF[:,np.newaxis]),axis=1)    
     elif flavor[0] == 'WMCSF+dt+sq':
         meanWM = np.array(data.loc[:,'white_matter'])
         meanWM = meanWM - np.mean(meanWM)
@@ -945,6 +1006,11 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         meanGM = meanGM - np.mean(meanGM)
         meanGM = meanGM/max(meanGM)
         X = meanGM[:,np.newaxis]
+    elif flavor[0] == 'WM':
+        meanWM = np.array(data.loc[:,'white_matter'])
+        meanWM = meanWM - np.mean(meanWM)
+        meanWM = meanWM/max(meanWM)
+        X = meanWM[:,np.newaxis]
     else:
         print 'Warning! Wrong tissue regression flavor. Nothing was done'
     
@@ -1083,6 +1149,11 @@ def GlobalSignalRegression(niiImg, flavor, masks, imgInfo):
     GS = np.array(data['global_signal'])
     if flavor[0] == 'GS':
         return GS[:,np.newaxis]
+    elif flavor[0] == 'GS+dt':
+        dtGS = np.zeros(GS.shape,dtype=np.float32)
+        dtGS[1:] = np.diff(GS, n=1)
+        X  = np.concatenate((GS[:,np.newaxis], dtGS[:,np.newaxis]), axis=1)
+        return X
     elif flavor[0] == 'GS+dt+sq':
         dtGS = np.zeros(GS.shape,dtype=np.float32)
         dtGS[1:] = np.diff(GS, n=1)
@@ -1099,6 +1170,22 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
         niiImg[0] = stats.zscore(niiImg[0], axis=1, ddof=1)
         if niiImg[1] is not None:
             niiImg[1] = stats.zscore(niiImg[1], axis=1, ddof=1)
+    elif flavor[0] == 'pcSigCh':
+        meanImg = np.mean(niiImg[0],axis=1)[:,np.newaxis]
+        close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
+        if close0.shape[0] > 0:
+            meanImg[close0,0] = np.max(np.abs(niiImg[0][close0,:]),axis=1)
+	    niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
+        niiImg[0] = 100 * (niiImg[0] - meanImg) / meanImg
+        niiImg[0][np.where(np.isnan(niiImg[0]))] = 0
+        if niiImg[1] is not None:
+            meanImg = np.mean(niiImg[1],axis=1)[:,np.newaxis]
+            close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
+            if close0.shape[0] > 0:
+                meanImg[close0,0] = np.max(np.abs(niiImg[1][close0,:]),axis=1)
+	        niiImg[1][close0,:] = niiImg[1][close0,:] + meanImg[close0,:]
+            niiImg[1] = 100 * (niiImg[1] - meanImg) / meanImg
+            niiImg[1][np.where(np.isnan(niiImg[1]))] = 0
     elif flavor[0] == 'demean':
         niiImg[0] = niiImg[0] - niiImg[0].mean(1)[:,np.newaxis]
         if niiImg[1] is not None:
