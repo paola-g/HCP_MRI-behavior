@@ -22,6 +22,7 @@ class config(object):
     parcellationName   = ''
     parcellationFile   = ''
     outDir             = 'rsDenoise'
+    smoothing          = 's0' # ciftify format, used to read CIFTI files
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -1911,7 +1912,6 @@ def runPipeline():
 def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
     if config.queue: 
         priority=-100
-    config.suffix = '_hp2000_clean' if config.useFIX else '' 
     if config.isCifti:
         config.ext = '.dtseries.nii'
     else:
@@ -1921,13 +1921,13 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
         overwriteFC = True
 
     if hasattr(config,'fmriFileTemplate'):
-        config.fmriFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#suffix#',config.suffix))
+        config.fmriFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun))
     else:
 	prefix = config.sessioni+'_' if  hasattr(config,'session')  else ''
         if config.isCifti:
-            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas'+config.suffix+'.dtseries.nii')
+            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+'.dtseries.nii')
         else:
-            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+config.suffix+'.nii.gz')
+            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'.nii.gz')
     
     if not op.isfile(config.fmriFile):
         print config.subject, 'missing'
@@ -2026,7 +2026,6 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
         thispythonfn += 'config.preWhitening     = {}\n'.format(config.preWhitening)
         thispythonfn += 'config.isCifti          = {}\n'.format(config.isCifti)
         thispythonfn += 'config.Operations       = {}\n'.format(config.Operations)
-        thispythonfn += 'config.suffix           = "{}"\n'.format(config.suffix)
         thispythonfn += 'config.ext              = "{}"\n'.format(config.ext)
         thispythonfn += 'config.fmriFile         = "{}"\n'.format(config.fmriFile)
         thispythonfn += 'config.Flavors          = {}\n'.format(config.Flavors)
@@ -2052,7 +2051,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                 thispythonfn += 'try:\n    remove(config.fmriFile.replace(".gz",""))\nexcept OSError:\n    pass\n'
                 thispythonfn += 'try:\n    remove(config.fmriFile_dn.replace(".gz",""))\nexcept OSError:\n    pass\n'
             if config.isCifti:
-                thispythonfn += 'for f in glob.glob(config.fmriFile.replace("_Atlas","").replace(".dtseries.nii","*.tsv")): os.remove(f)\n'
+                thispythonfn += 'for f in glob.glob(config.fmriFile.replace("_Atlas_{}".format(config.smoothing),"").replace(".dtseries.nii","*.tsv")): os.remove(f)\n'
         thispythonfn += 'logFid.close()\n'
         thispythonfn += 'END'
 
@@ -2110,7 +2109,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                 except OSError:
                     pass
             if config.isCifti:
-                for f in glob.glob(config.fmriFile.replace('_Atlas','').replace(".dtseries.nii","*.tsv")):
+                for f in glob.glob(config.fmriFile.replace('_Atlas_{}'.format(config.smoothing),'').replace(".dtseries.nii","*.tsv")):
                     try:
                         remove(f)
                     except OSError:
