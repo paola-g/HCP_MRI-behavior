@@ -9,7 +9,6 @@ class config(object):
     joblist            = list()
     queue              = False
     tStamp             = ''
-    useFIX             = False
     useMemMap          = False
     steps              = {}
     Flavors            = {}
@@ -32,11 +31,11 @@ class config(object):
 # IMPORTS
 #----------------------------------
 # Force matplotlib to not use any Xwindows backend.
-#import matplotlib
+import matplotlib
 # core dump with matplotlib 2.0.0; use earlier version, e.g. 1.5.3
-#matplotlib.use('Agg')
-#import matplotlib.pyplot as plt
-#import matplotlib.image as mpimg
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 import pandas as pd
 import os.path as op
 from os import mkdir, makedirs, getcwd, remove, listdir, environ
@@ -229,6 +228,23 @@ config.operationDict = {
         ['MotionRegression',        3, ['censoring']],
         ['Scrubbing',               3, ['FD+DVARS', 0.25, 5]], 
         ['TemporalFiltering',       4, ['Butter', 0.009, 0.0801]]
+        ],
+    'test_fmriprep': [ 
+        ['VoxelNormalization',      1, ['demean']],
+        ['VoxelNormalization',      1, ['zscore']],
+        ['VoxelNormalization',      1, ['pcSigCh']],
+        ['Detrending',              2, ['poly', 2, 'wholebrain']],
+        ['Detrending',              2, ['legendre', 3, 'GM']],
+        ['Detrending',              2, ['legendre', 2, 'WMCSF']],
+        ['TissueRegression',        3, ['CompCor', 'fmriprep', 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'WM+CSF','GM']],
+        ['TissueRegression',        3, ['CompCor', 5, 'WMCSF','wholebrain']],
+        ['TissueRegression',        3, ['WMCSF+dt+sq', 'GM']], 
+        ['TemporalFiltering',       3, ['DCT']], 
+        ['GlobalSignalRegression',  3, ['GS+dt+sq']],
+        ['MotionRegression',        3, ['R R^2 R-1 R-1^2']],
+        ['Scrubbing',               3, ['FD', 0.25, 3]], 
+        ['TemporalFiltering',       4, ['CompCor']]
         ]
     }
 #----------------------------------
@@ -338,9 +354,6 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
         nRows, nCols, nSlices = img.header.get_data_shape()
         nTRs = 1
     TR = img.header.structarr['pixdim'][4]
-
-    print img.dataobj.shape
-    sys.stdout.flush()
 
     if unzip:
         data = np.memmap(volFile, dtype=img.header.get_data_dtype(), mode='c', order='F',
@@ -812,8 +825,6 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         data_roll2_squared = data_roll2 ** 2
         X = np.concatenate((X1, data_squared, data_roll, data_roll_squared, data_roll2, data_roll2_squared), axis=1)
     elif flavor[0] == 'censoring':
-        nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
-    elif flavor[0] == 'censoring':
         nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
         X = np.empty((nTRs, 0))
     else:
@@ -847,7 +858,6 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     """
     Largely based on: 
     - https://git.becs.aalto.fi/bml/bramila/blob/master/bramila_dvars.m
-A
     - https://github.com/poldrack/fmriqa/blob/master/compute_fd.py
     """
     thr = flavor[1]
@@ -857,17 +867,20 @@ A
     if flavor[0] == 'FD':
         data = get_confounds()
         score = np.array(data['framewise_displacement']).astype(float)
+        censored = np.where(score>thr)
+    elif flavor[0] == 'FDclean':
+        data = get_confounds()
+        score = np.array(data['framewise_displacement']).astype(float)
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         censored = np.where(cleanFD>thr)
     elif flavor[0] == 'DVARS':
         data = get_confounds()
         score = np.array(data['dvars']).astype(float)
         censored = score > (100+thr)/100* np.median(score)
-    elif flavor[0] == 'FD+DVARS':
+    elif flavor[0] == 'FD+DVARS': # as in Siegel et al. 2016
         data = get_confounds()
         score = np.array(data['framewise_displacement']).astype(float)
         scoreDVARS = np.array(data['dvars']).astype(float)
-        # as in Siegel et al. 2016
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         thr2 = flavor[2]
         censDVARS = scoreDVARS > (100+thr2)/100* np.median(scoreDVARS)
@@ -1031,7 +1044,7 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
     elif flavor[-1] == 'wholebrain':
         return X
     else:
-        print 'Warning! Wrong tissue regression flavor. Nothing was done'
+        print "Warning! Last option of TissueRegression should be either 'GM' or 'wholebrain'. Nothing was done"
         
 def Detrending(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
@@ -1147,7 +1160,8 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     return niiImg[0],niiImg[1]    
 
 def GlobalSignalRegression(niiImg, flavor, masks, imgInfo):
-    GS = np.array(data['global_signal'])
+    data = get_confounds()
+    GS = np.array(data.loc[:,'global_signal'])
     if flavor[0] == 'GS':
         return GS[:,np.newaxis]
     elif flavor[0] == 'GS+dt':
@@ -1214,14 +1228,12 @@ Hooks={
 #  
 #  @return [np.array] frame displacement score
 #  
-def computeFD():
+def computeFD(lowpass=None):
     # Frame displacement
-    motionFile = op.join(buildpath(), config.movementRegressorsFile)
-    dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
-    headradius=50 #50mm as in Powers et al. 2012
-    disp=dmotpars.copy()
-    disp[:,3:]=np.pi*headradius*2*(disp[:,3:]/360)
-    score=np.sum(disp,1)
+    data = get_confounds()
+    score = np.array(data['framewise_displacement']).astype(float)
+    if lowpass:
+        score = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=lowpass)
     return score
 
 ## 
@@ -1232,6 +1244,7 @@ def computeFD():
 #  
 def makeGrayPlot(displayPlot=False,overwrite=False):
     savePlotFile = config.fmriFile_dn.replace(config.ext,'_grayplot.png')
+    print savePlotFile
     if not op.isfile(savePlotFile) or overwrite:
         # FD
         t = time()
@@ -1821,7 +1834,8 @@ def runPipeline():
 
     if config.isCifti:
         # volume
-        volFile = op.join(buildpath(), config.fmriRun+'.nii.gz')
+	prefix = config.session+'_' if  hasattr(config,'session')  else ''
+        volFile = op.join(buildpath(), prefix+config.fmriRun+'.nii.gz')
         print 'Loading [volume] data in memory... {}'.format(volFile)
         volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         # cifti
@@ -1843,8 +1857,7 @@ def runPipeline():
         if len(step) == 1:
             # Atomic operations
             if ('Regression' in step[0]) or ('TemporalFiltering' in step[0] and 'DCT' in Flavors[i][0]) or ('TemporalFiltering' in step[0] and 'CompCor' in Flavors[i][0]) or ('wholebrain' in Flavors[i][0]):
-                if ((step[0]=='TissueRegression' and 'GM' in Flavors[i][0] and 'wholebrain' not in Flavors[i][0]) or
-                   (step[0]=='MotionRegression' and 'nonaggr' in Flavors[i][0])): 
+                if (step[0]=='TissueRegression' and 'GM' in Flavors[i][0] and 'wholebrain' not in Flavors[i][0]):
                     #regression constrained to GM
                     data, volData = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                 else:
@@ -1859,8 +1872,7 @@ def runPipeline():
             for j in range(len(step)):
                 opr = step[j]
                 if ('Regression' in opr) or ('TemporalFiltering' in opr and 'DCT' in Flavors[i][j]) or ('TemporalFiltering' in opr and 'CompCor' in Flavors[i][j]) or ('wholebrain' in Flavors[i][j]):
-                    if ((opr=='TissueRegression' and 'GM' in Flavors[i][j] and 'wholebrain' not in Flavors[i][j]) or
-                       (opr=='MotionRegression' and 'nonaggr' in Flavors[i][j])): 
+                    if (opr=='TissueRegression' and 'GM' in Flavors[i][j] and 'wholebrain' not in Flavors[i][j]):
                         #regression constrained to GM
                         data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                     else:    
@@ -1921,13 +1933,13 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
         overwriteFC = True
 
     if hasattr(config,'fmriFileTemplate'):
-        config.fmriFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun))
+        config.fmriFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
     else:
-	prefix = config.sessioni+'_' if  hasattr(config,'session')  else ''
+	prefix = config.session+'_' if  hasattr(config,'session')  else ''
         if config.isCifti:
-            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+'.dtseries.nii')
+            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+config.ext)
         else:
-            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'.nii.gz')
+            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+config.ext)
     
     if not op.isfile(config.fmriFile):
         print config.subject, 'missing'
@@ -2017,7 +2029,6 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
         thispythonfn += 'config.subject          = "{}"\n'.format(config.subject)
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
         thispythonfn += 'config.fmriRun          = "{}"\n'.format(config.fmriRun)
-        thispythonfn += 'config.useFIX           = {}\n'.format(config.useFIX)
         thispythonfn += 'config.useNative        = {}\n'.format(config.useNative)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
         thispythonfn += 'config.overwrite        = {}\n'.format(config.overwrite)
