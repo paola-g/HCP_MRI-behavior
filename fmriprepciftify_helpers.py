@@ -596,8 +596,8 @@ def fnSubmitJobArrayFromJobList():
         f.write('#$ {}\n'.format(config.sgeopts))
         f.write('SCRIPT=$(awk "NR==$SGE_TASK_ID" {})\n'.format(op.join('tmp{}'.format(config.tStamp),'scriptlist')))
         f.write('bash $SCRIPT\n')
-    #strCommand = 'cd {};qsub {}'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
-    strCommand = 'ssh csclprd3s1 "cd {};qsub {}"'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
+    strCommand = 'cd {};qsub {}'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
+    #strCommand = 'ssh csclprd3s1 "cd {};qsub {}"'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
     # write down the command to a file in the job folder
     with open(op.join('tmp{}'.format(config.tStamp),'cmd'),'w+') as f:
         f.write(strCommand+'\n')
@@ -1262,10 +1262,11 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             Xcsf = X[maskCSF_,:]
         else:
             # cifti
-            if not op.isfile(config.fmriFile.replace('.dtseries.nii','.tsv')):
-                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,config.fmriFile.replace('.dtseries.nii','.tsv'))
+            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            if not op.isfile(tsvFile):
+                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,tsvFile)
                 call(cmd,shell=True)
-            Xgm = pd.read_csv(config.fmriFile.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
+            Xgm = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
             nTRs = Xgm.shape[1]
             Xgm = stats.zscore(Xgm, axis=1, ddof=1)
 
@@ -1296,10 +1297,11 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             Xcsf = X[maskCSF_,:]
         else:
             # cifti
-            if not op.isfile(config.fmriFile_dn.replace('.dtseries.nii','.tsv')):
-                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,config.fmriFile_dn.replace('.dtseries.nii','.tsv'))
+            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            if not op.isfile(tsvFile):
+                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
                 call(cmd,shell=True)
-            Xgm = pd.read_csv(config.fmriFile_dn.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
+            Xgm = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
             nTRs = Xgm.shape[1]
             Xgm = stats.zscore(Xgm, axis=1, ddof=1)
 
@@ -1340,9 +1342,10 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
 def parcellate(overwrite=False):
     print "entering parcellate (overwrite={})".format(overwrite)
     # After preprocessing, functional connectivity is computed
-    tsDir = op.join(buildpath(),config.parcellationName)
+    tsDir = op.join(outpath(),config.parcellationName)
     if not op.isdir(tsDir): mkdir(tsDir)
-    tsDir = op.join(tsDir,config.fmriRun+config.ext)
+    prefix = config.session+'_' if  hasattr(config,'session')  else ''
+    tsDir = op.join(tsDir,prefix+config.fmriRun+config.ext)
     if not op.isdir(tsDir): mkdir(tsDir)
 
     #####################
@@ -1371,11 +1374,11 @@ def parcellate(overwrite=False):
         if not config.isCifti:
             data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
         else:
-            if not op.isfile(config.fmriFile.replace('.dtseries.nii','.tsv')):
-                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,
-                                                                           config.fmriFile.replace('.dtseries.nii','.tsv'))
+            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            if not op.isfile(tsvFile):
+                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,tsvFile)
                 call(cmd, shell=True)
-            data = pd.read_csv(config.fmriFile.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
+            data = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
         
         for iParcel in np.arange(config.nParcels):
             tsFile = op.join(tsDir,'parcel{:03d}.txt'.format(iParcel+1))
@@ -1425,7 +1428,8 @@ def parcellate(overwrite=False):
 #  
 def computeFC(overwrite=False):
     print "entering computeFC (overwrite={})".format(overwrite)
-    tsDir = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
+    prefix = config.session+'_' if  hasattr(config,'session')  else ''
+    tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     ###################
     # original
     ###################
@@ -1475,7 +1479,8 @@ def plotFC(displayPlot=False,overwrite=False):
 
     if not op.isfile(savePlotFile) or overwrite:
         computeFC(overwrite)
-    tsDir      = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
+    prefix = config.session+'_' if  hasattr(config,'session')  else ''
+    tsDir      = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     fcFile     = op.join(tsDir,'allParcels_Pearson.txt')
     fcMat      = np.genfromtxt(fcFile,delimiter=",")
     rstring    = get_rcode(config.fmriFile_dn)
@@ -1759,8 +1764,8 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
             mkdir(jobDir)
         jobName = 'f{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(el,config.pipelineName,config.parcellationName,SM, model,config.release,session,decon,fctype)
         # make a script
-        thispythonfn  = '<< END\nimport sys\nsys.path.insert(0,"{}")\n'.format(getcwd())
-        thispythonfn += 'from HCP_helpers import *\n'
+        thispythonfn  = '<< END\nimport sys\nsys.path.insert(0,"{}")\n'.format(config.sourceDir)
+        thispythonfn += 'from fmriprepciftify_helpers import *\n'
         thispythonfn += 'logFid                  = open("{}","a+")\n'.format(op.join(jobDir,jobName+'.log'))
         thispythonfn += 'sys.stdout              = logFid\n'
         thispythonfn += 'sys.stderr              = logFid\n'
@@ -1839,7 +1844,7 @@ def runPipeline():
         print 'Loading [volume] data in memory... {}'.format(volFile)
         volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         # cifti
-        print 'Loading [cifti] data in memory... {}'.format(config.fmriFile.replace('.dtseries.nii','.tsv'))
+	print 'Loading [cifti] data in memory... {}'.format(config.fmriFile.replace('.dtseries.nii','.tsv'))
         if not op.isfile(config.fmriFile.replace('.dtseries.nii','.tsv')):
             cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,config.fmriFile.replace('.dtseries.nii','.tsv'))
             call(cmd,shell=True)
@@ -1890,7 +1895,8 @@ def runPipeline():
     print 'Done! Copy the resulting file...'
     rstring = ''.join(random.SystemRandom().choice(string.ascii_lowercase +string.ascii_uppercase + string.digits) for _ in range(8))
     outDir  = outpath()
-    outFile = config.fmriRun+'_prepro_'+rstring
+    prefix = config.session+'_' if  hasattr(config,'session')  else ''
+    outFile = prefix+config.fmriRun+'_prepro_'+rstring
     if config.isCifti:
         # write to text file
         np.savetxt(op.join(outDir,outFile+'.tsv'),data, delimiter='\t', fmt='%.6f')
@@ -1981,7 +1987,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                 config.steps[cstep].append(opr[0])
                 config.Flavors[cstep].append(opr[2])
             prev_step = opr[1]                
-    precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,buildpath()) 
+    precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath()) 
 
     if precomputed and not config.overwrite:
         do_makeGrayPlot    = False
@@ -2004,21 +2010,21 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
             except OSError:
                 pass
             try:
-                remove(op.join(buildpath(),get_rcode(precomputed)+'.xml'))
+                remove(op.join(outpath(),get_rcode(precomputed)+'.xml'))
             except OSError:
                 pass
         do_makeGrayPlot = True
         do_plotFC       = True
 
     if config.queue or launchSubproc:
-        jobDir = op.join(buildpath(),'jobs')
+        jobDir = op.join(config.outDir,'jobs')
         if not op.isdir(jobDir): 
             mkdir(jobDir)
-        jobName = 's{}_{}_{}_cifti{}_{}'.format(config.subject,config.fmriRun,config.pipelineName,config.isCifti,timestamp())
+        jobName = '{}_{}_{}_cifti{}_{}'.format(config.subject,config.fmriRun,config.pipelineName,config.isCifti,timestamp())
 
         # make a script
-        thispythonfn  = '<< END\nimport sys\nsys.path.insert(0,"{}")\n'.format(getcwd())
-        thispythonfn += 'from HCP_helpers import *\n'
+        thispythonfn  = '<< END\nimport sys\nsys.path.insert(0,"{}")\n'.format(config.sourceDir)
+        thispythonfn += 'from fmriprepciftify_helpers import *\n'
         thispythonfn += 'logFid                  = open("{}","a+",1)\n'.format(op.join(jobDir,jobName+'.log'))
         thispythonfn += 'sys.stdout              = logFid\n'
         thispythonfn += 'sys.stderr              = logFid\n'
@@ -2047,8 +2053,8 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
         thispythonfn += 'config.nParcels         = {}\n'.format(config.nParcels)
         if hasattr(config, 'melodicFolder'): 
             thispythonfn += 'config.melodicFolder    = "{}"\n'.format(config.melodicFolder.replace('#fMRIrun#', config.fmriRun))
-        thispythonfn += 'config.movementRegressorsFile      = "{}"\n'.format(config.movementRegressorsFile)
-        thispythonfn += 'config.movementRelativeRMSFile         = "{}"\n'.format(config.movementRelativeRMSFile)
+        if hasattr(config, 'session'): 
+            thispythonfn += 'config.session    = "{}"\n'.format(config.session)
         if precomputed and not config.overwrite:
             thispythonfn += 'config.fmriFile_dn = "{}"\n'.format(precomputed)
         else:
@@ -2062,7 +2068,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                 thispythonfn += 'try:\n    remove(config.fmriFile.replace(".gz",""))\nexcept OSError:\n    pass\n'
                 thispythonfn += 'try:\n    remove(config.fmriFile_dn.replace(".gz",""))\nexcept OSError:\n    pass\n'
             if config.isCifti:
-                thispythonfn += 'for f in glob.glob(config.fmriFile.replace("_Atlas_{}".format(config.smoothing),"").replace(".dtseries.nii","*.tsv")): os.remove(f)\n'
+                thispythonfn += 'for f in glob.glob(config.fmriFile_dn.replace(".dtseries.nii","*.tsv")): os.remove(f)\n'
         thispythonfn += 'logFid.close()\n'
         thispythonfn += 'END'
 
@@ -2120,11 +2126,16 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                 except OSError:
                     pass
             if config.isCifti:
-                for f in glob.glob(config.fmriFile.replace('_Atlas_{}'.format(config.smoothing),'').replace(".dtseries.nii","*.tsv")):
+                for f in glob.glob(config.fmriFile_dn.replace(".dtseries.nii","*.tsv")):
                     try:
                         remove(f)
                     except OSError:
                         pass
+
+    if len(config.scriptlist)>0:
+        # launch array job
+        JobID = fnSubmitJobArrayFromJobList()
+        config.joblist.append(JobID.split('.')[0])
     return True
 
 
