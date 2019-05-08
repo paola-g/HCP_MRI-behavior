@@ -107,7 +107,7 @@ def get_confounds():
 		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
     else:
         confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, 'func', 
-		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
+		config.subject+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
     data = pd.read_csv(confoundsFile, delimiter='\t')
     data.replace('n/a', 0, inplace=True)
     return data
@@ -891,7 +891,6 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     elif flavor[0] == 'RMS':
         data = get_confounds()
         regs = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
-        regs[:,3:] = np.degrees(regs[:,3:]) # as in HCP
         rmsdiff = np.zeros((nTRs, 1))
         idx_maskall = np.unravel_index(np.where(maskAll), [nRows,nCols,nSlices], order='F')
         minz, maxz = np.min(idx_maskall[2]), np.max(idx_maskall[2])
@@ -1948,7 +1947,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
             config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+config.ext)
     
     if not op.isfile(config.fmriFile):
-        print config.subject, 'missing'
+        print config.fmriFile, 'missing'
         sys.stdout.flush()
         return False
 
@@ -2132,10 +2131,6 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                     except OSError:
                         pass
 
-    if len(config.scriptlist)>0:
-        # launch array job
-        JobID = fnSubmitJobArrayFromJobList()
-        config.joblist.append(JobID.split('.')[0])
     return True
 
 

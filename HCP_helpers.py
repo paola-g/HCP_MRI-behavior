@@ -50,7 +50,7 @@ import scipy.io as sio
 from scipy.spatial.distance import pdist, squareform
 from scipy.ndimage.morphology import binary_closing, binary_dilation, binary_erosion, binary_opening, generate_binary_structure
 import nipype.interfaces.fsl as fsl
-from subprocess import call, check_output, CalledProcessError, Popen
+from subprocess import call, check_output, CalledProcessError, Popen, getoutput
 import nibabel as nib
 import sklearn.model_selection as cross_validation
 from sklearn.linear_model import ElasticNetCV
@@ -58,6 +58,7 @@ from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
 from sklearn.covariance import MinCovDet,GraphLassoCV
 from nilearn.signal import clean
+from past.utils import old_div
 import operator
 import gzip
 import string
@@ -221,7 +222,7 @@ config.operationDict = {
 #  
 def filter_regressors(regressors, filtering, nTRs, TR):
     if len(filtering)==0:
-        print 'Error! Missing or wrong filtering flavor. Regressors were not filtered.'
+        print('Error! Missing or wrong filtering flavor. Regressors were not filtered.')
     else:
         if filtering[0] == 'Butter':
             regressors = clean(regressors, detrend=False, standardize=False, 
@@ -242,7 +243,7 @@ def filter_regressors(regressors, filtering, nTRs, TR):
 #  @return [numpy.array] residuals of regression, same dimensions as data
 #  	
 def regress(data, nTRs, TR, regressors, preWhitening=False):
-    print 'Starting regression with {} regressors...'.format(regressors.shape[1])
+    print('Starting regression with {} regressors...'.format(regressors.shape[1]))
     if preWhitening:
         W = prewhitening(data, nTRs, TR, regressors)
         data = np.dot(data,W)
@@ -255,7 +256,7 @@ def regress(data, nTRs, TR, regressors, preWhitening=False):
     resid = data - fittedvalues.T
     data = resid
     elapsed_time = time() - start_time
-    print 'Regression completed in {:02d}h{:02d}min{:02d}s'.format(int(np.floor(elapsed_time/3600)),int(np.floor((elapsed_time%3600)/60)),int(np.floor(elapsed_time%60))) 
+    print('Regression completed in {:02d}h{:02d}min{:02d}s'.format(int(np.floor(elapsed_time/3600)),int(np.floor((elapsed_time%3600)/60)),int(np.floor(elapsed_time%60)))) 
     return data
 	
 ## 
@@ -665,6 +666,377 @@ def rawgencount(filename):
     f_gen = _make_gen(f.read)
     return sum( buf.count(b'\n') for buf in f_gen )        
 
+"""
+The following functions implement the ICA-AROMA algorithm (Pruim et al. 2015) 
+and are adapted from https://github.com/rhr-pruim/ICA-AROMA
+"""
+
+def feature_time_series(melmix, mc):
+    """ This function extracts the maximum RP correlation feature scores. 
+    It determines the maximum robust correlation of each component time-series 
+    with a model of 72 realigment parameters.
+
+    Parameters
+    ---------------------------------------------------------------------------------
+    melmix:     Full path of the melodic_mix text file
+    mc:     Full path of the text file containing the realignment parameters
+    
+    Returns
+    ---------------------------------------------------------------------------------
+    maxRPcorr:  Array of the maximum RP correlation feature scores for the components of the melodic_mix file"""
+
+    # Read melodic mix file (IC time-series), subsequently define a set of squared time-series
+    mix = np.loadtxt(melmix)
+    mixsq = np.power(mix,2)
+
+    # Read motion parameter file
+    RP6 = np.loadtxt(mc)[:,:6]
+
+    # Determine the derivatives of the RPs (add zeros at time-point zero)
+    RP6_der = np.array(RP6[list(range(1,RP6.shape[0])),:] - RP6[list(range(0,RP6.shape[0]-1)),:])
+    RP6_der = np.concatenate((np.zeros((1,6)),RP6_der),axis=0)
+
+    # Create an RP-model including the RPs and its derivatives
+    RP12 = np.concatenate((RP6,RP6_der),axis=1)
+
+    # Add the squared RP-terms to the model
+    RP24 = np.concatenate((RP12,np.power(RP12,2)),axis=1)
+
+    # Derive shifted versions of the RP_model (1 frame for and backwards)
+    RP24_1fw = np.concatenate((np.zeros((1,24)),np.array(RP24[list(range(0,RP24.shape[0]-1)),:])),axis=0)
+    RP24_1bw = np.concatenate((np.array(RP24[list(range(1,RP24.shape[0])),:]),np.zeros((1,24))),axis=0)
+
+    # Combine the original and shifted mot_pars into a single model
+    RP_model = np.concatenate((RP24,RP24_1fw,RP24_1bw),axis=1)
+
+    # Define the column indices of respectively the squared or non-squared terms
+    idx_nonsq = np.array(np.concatenate((list(range(0,12)), list(range(24,36)), list(range(48,60))),axis=0))
+    idx_sq = np.array(np.concatenate((list(range(12,24)), list(range(36,48)), list(range(60,72))),axis=0))
+
+    # Determine the maximum correlation between RPs and IC time-series
+    nSplits=int(1000)
+    maxTC = np.zeros((nSplits,mix.shape[1]))
+    for i in range(0,nSplits):
+        # Get a random set of 90% of the dataset and get associated RP model and IC time-series matrices
+        idx = np.array(random.sample(list(range(0,mix.shape[0])),int(round(0.9*mix.shape[0]))))
+        RP_model_temp = RP_model[idx,:]
+        mix_temp = mix[idx,:]
+        mixsq_temp = mixsq[idx,:]
+
+        # Calculate correlation between non-squared RP/IC time-series
+        RP_model_nonsq = RP_model_temp[:,idx_nonsq]
+        cor_nonsq = np.array(np.zeros((mix_temp.shape[1],RP_model_nonsq.shape[1])))
+        for j in range(0,mix_temp.shape[1]):
+            for k in range(0,RP_model_nonsq.shape[1]):
+                cor_temp = np.corrcoef(mix_temp[:,j],RP_model_nonsq[:,k])
+                cor_nonsq[j,k] = cor_temp[0,1]
+
+        # Calculate correlation between squared RP/IC time-series
+        RP_model_sq = RP_model_temp[:,idx_sq]
+        cor_sq = np.array(np.zeros((mix_temp.shape[1],RP_model_sq.shape[1])))
+        for j in range(0,mixsq_temp.shape[1]):
+            for k in range(0,RP_model_sq.shape[1]):
+                cor_temp = np.corrcoef(mixsq_temp[:,j],RP_model_sq[:,k])
+                cor_sq[j,k] = cor_temp[0,1]
+
+        # Combine the squared an non-squared correlation matrices
+        corMatrix = np.concatenate((cor_sq,cor_nonsq),axis=1)
+
+        # Get maximum absolute temporal correlation for every IC
+        corMatrixAbs = np.abs(corMatrix)
+        maxTC[i,:] = corMatrixAbs.max(axis=1)
+
+    # Get the mean maximum correlation over all random splits
+    maxRPcorr = maxTC.mean(axis=0)
+
+    # Return the feature score
+    return maxRPcorr
+
+def feature_frequency(melFTmix, TR):
+    """ 
+    Taken from https://github.com/rhr-pruim/ICA-AROMA
+    This function extracts the high-frequency content feature scores. 
+    It determines the frequency, as fraction of the Nyquist frequency, 
+    at which the higher and lower frequencies explain half of the total power between 0.01Hz and Nyquist. 
+    
+    Parameters
+    ---------------------------------------------------------------------------------
+    melFTmix:   Full path of the melodic_FTmix text file
+    TR:     TR (in seconds) of the fMRI data (float)
+    
+    Returns
+    ---------------------------------------------------------------------------------
+    HFC:        Array of the HFC ('High-frequency content') feature scores for the components of the melodic_FTmix file"""
+
+    
+    # Determine sample frequency
+    Fs = old_div(1,TR)
+
+    # Determine Nyquist-frequency
+    Ny = old_div(Fs,2)
+        
+    # Load melodic_FTmix file
+    FT=np.loadtxt(melFTmix)
+
+    # Determine which frequencies are associated with every row in the melodic_FTmix file  (assuming the rows range from 0Hz to Nyquist)
+    f = Ny*(np.array(list(range(1,FT.shape[0]+1))))/(FT.shape[0])
+
+    # Only include frequencies higher than 0.01Hz
+    fincl = np.squeeze(np.array(np.where( f > 0.01 )))
+    FT=FT[fincl,:]
+    f=f[fincl]
+
+    # Set frequency range to [0-1]
+    f_norm = old_div((f-0.01),(Ny-0.01))
+
+    # For every IC; get the cumulative sum as a fraction of the total sum
+    fcumsum_fract = old_div(np.cumsum(FT,axis=0), np.sum(FT,axis=0))
+
+    # Determine the index of the frequency with the fractional cumulative sum closest to 0.5
+    idx_cutoff=np.argmin(np.abs(fcumsum_fract-0.5),axis=0)
+
+    # Now get the fractions associated with those indices index, these are the final feature scores
+    HFC = f_norm[idx_cutoff]
+         
+    # Return feature score
+    return HFC
+
+def feature_spatial(fslDir, tempDir, aromaDir, melIC):
+    """ 
+    Taken from https://github.com/rhr-pruim/ICA-AROMA
+    This function extracts the spatial feature scores. 
+    For each IC it determines the fraction of the mixture modeled thresholded Z-maps 
+    respecitvely located within the CSF or at the brain edges, using predefined standardized masks.
+
+    Parameters
+    ---------------------------------------------------------------------------------
+    fslDir:     Full path of the bin-directory of FSL
+    tempDir:    Full path of a directory where temporary files can be stored (called 'temp_IC.nii.gz')
+    aromaDir:   Full path of the ICA-AROMA directory, containing the mask-files (mask_edge.nii.gz, mask_csf.nii.gz & mask_out.nii.gz) 
+    melIC:      Full path of the nii.gz file containing mixture-modeled threholded (p>0.5) Z-maps, registered to the MNI152 2mm template
+    
+    Returns
+    ---------------------------------------------------------------------------------
+    edgeFract:  Array of the edge fraction feature scores for the components of the melIC file
+    csfFract:   Array of the CSF fraction feature scores for the components of the melIC file"""
+
+    EDGEmaskFileout = op.join(buildpath(), 'EDGEmask.nii')
+
+    if not op.isfile(EDGEmaskFileout):
+        WMmaskFileout = op.join(buildpath(), 'WMmask.nii')
+        CSFmaskFileout = op.join(buildpath(), 'CSFmask.nii')
+        GMmaskFileout = op.join(buildpath(), 'GMmask.nii')
+        OUTmaskFileout = op.join(buildpath(), 'OUTmask.nii')
+
+        tmpWM = nib.load(WMmaskFileout)
+        nRows, nCols, nSlices = tmpWM.header.get_data_shape()
+        tmpCSF = nib.load(CSFmaskFileout)
+        tmpGM = nib.load(GMmaskFileout)
+        maskGM = np.asarray(tmpGM.dataobj).reshape(nRows*nCols*nSlices, order='F') > 0
+
+        GMWMmask = np.logical_or(tmpWM.dataobj,tmpGM.dataobj)
+        ALLmask = np.logical_or(GMWMmask, tmpCSF.dataobj)
+        ALLclose = binary_closing(ALLmask,structure=generate_binary_structure(3,4))
+        OUTmask = binary_erosion(np.logical_not(ALLclose),structure=generate_binary_structure(3,2),border_value=1)
+        OUTmask = binary_opening(OUTmask,structure=generate_binary_structure(3,2))
+        img = nib.Nifti1Image(OUTmask.astype('<f4'), tmpWM.affine)
+        nib.save(img, OUTmaskFileout)
+
+        OUTdil = binary_dilation(OUTmask, structure=generate_binary_structure(3,5),iterations=2)
+        GMWMdil = binary_dilation(GMWMmask, structure=generate_binary_structure(3,5))
+        CSFdil = binary_dilation(tmpCSF.dataobj, structure=generate_binary_structure(3,5),iterations=2)
+        CSFero = binary_erosion(CSFdil, iterations=4)
+        EDGEmask = np.logical_or(binary_opening(np.logical_and(CSFdil,GMWMdil)),binary_closing(np.logical_and(GMWMdil,OUTdil)))
+        EDGEmask = np.logical_and(EDGEmask, binary_opening(np.logical_not(CSFero)))
+        img = nib.Nifti1Image(EDGEmask.astype('<f4'), tmpWM.affine)
+        nib.save(img, EDGEmaskFileout)
+
+    # Get the number of ICs
+    numICs = int(getoutput('%sfslinfo %s | grep dim4 | head -n1 | awk \'{print $2}\'' % (fslDir, melIC) ))
+
+    # Loop over ICs
+    edgeFract=np.zeros(numICs)
+    csfFract=np.zeros(numICs)
+    for i in range(0,numICs):
+        # Define temporary IC-file
+        tempIC = op.join(tempDir,'temp_IC.nii.gz')
+
+        # Extract IC from the merged melodic_IC_thr2MNI2mm file
+        os.system(' '.join([op.join(fslDir,'fslroi'),
+            melIC,
+            tempIC,
+            str(i),
+            '1']))
+
+        # Change to absolute Z-values
+        os.system(' '.join([op.join(fslDir,'fslmaths'),
+            tempIC,
+            '-abs',
+            tempIC]))
+        
+        # Get sum of Z-values within the total Z-map (calculate via the mean and number of non-zero voxels)
+        totVox = int(getoutput(' '.join([op.join(fslDir,'fslstats'),
+                            tempIC,
+                            '-V | awk \'{print $1}\''])))
+        
+        if not (totVox == 0):
+            totMean = float(getoutput(' '.join([op.join(fslDir,'fslstats'),
+                            tempIC,
+                            '-M'])))
+        else:
+            print('     - The spatial map of component ' + str(i+1) + ' is empty. Please check!')
+            totMean = 0
+
+        totSum = totMean * totVox
+        
+        # Get sum of Z-values of the voxels located within the CSF (calculate via the mean and number of non-zero voxels)
+        csfVox = int(getoutput(' '.join([op.join(fslDir,'fslstats'),
+                            tempIC,
+                            '-k {}/CSFmask.nii'.format(aromaDir),
+                            '-V | awk \'{print $1}\''])))
+
+        if not (csfVox == 0):
+            csfMean = float(getoutput(' '.join([op.join(fslDir,'fslstats'),
+                            tempIC,
+                            '-k {}/CSFmask.nii'.format(aromaDir),
+                            '-M'])))
+        else:
+            csfMean = 0
+
+        csfSum = csfMean * csfVox   
+
+        # Get sum of Z-values of the voxels located within the Edge (calculate via the mean and number of non-zero voxels)
+        edgeVox = int(getoutput(' '.join([op.join(fslDir,'fslstats'),
+                            tempIC,
+                            '-k {}/EDGEmask.nii'.format(aromaDir),
+                            '-V | awk \'{print $1}\''])))
+        if not (edgeVox == 0):
+            edgeMean = float(getoutput(' '.join([op.join(fslDir,'fslstats'),
+                            tempIC,
+                            '-k {}/EDGEmask.nii'.format(aromaDir),
+                            '-M'])))
+        else:
+            edgeMean = 0
+        
+        edgeSum = edgeMean * edgeVox
+
+        # Get sum of Z-values of the voxels located outside the brain (calculate via the mean and number of non-zero voxels)
+        outVox = int(getoutput(' '.join([op.join(fslDir,'fslstats'),
+                            tempIC,
+                            '-k {}/OUTmask.nii'.format(aromaDir),
+                            '-V | awk \'{print $1}\''])))
+        if not (outVox == 0):
+            outMean = float(getoutput(' '.join([op.join(fslDir,'fslstats'),
+                            tempIC,
+                            '-k {}/OUTmask.nii'.format(aromaDir),
+                            '-M'])))
+        else:
+            outMean = 0
+        
+        outSum = outMean * outVox
+
+        # Determine edge and CSF fraction
+        if not (totSum == 0):
+            edgeFract[i] = old_div((outSum + edgeSum),(totSum - csfSum))
+            csfFract[i] = old_div(csfSum, totSum)
+        else:
+            edgeFract[i]=0
+            csfFract[i]=0
+
+    # Remove the temporary IC-file
+    remove(tempIC)
+
+    # Return feature scores
+    return edgeFract, csfFract
+
+def classification(outDir, maxRPcorr, edgeFract, HFC, csfFract):
+    """ 
+    Taken from https://github.com/rhr-pruim/ICA-AROMA
+    This function classifies a set of components into motion and non-motion 
+    components based on four features; maximum RP correlation, high-frequency content, 
+    edge-fraction and CSF-fraction
+
+    Parameters
+    ---------------------------------------------------------------------------------
+    outDir:     Full path of the output directory
+    maxRPcorr:  Array of the 'maximum RP correlation' feature scores of the components
+    edgeFract:  Array of the 'edge fraction' feature scores of the components
+    HFC:        Array of the 'high-frequency content' feature scores of the components
+    csfFract:   Array of the 'CSF fraction' feature scores of the components
+
+    Return
+    ---------------------------------------------------------------------------------
+    motionICs   Array containing the indices of the components identified as motion components
+
+    Output (within the requested output directory)
+    ---------------------------------------------------------------------------------
+    classified_motion_ICs.txt   A text file containing the indices of the components identified as motion components """
+
+    # Classify the ICs as motion or non-motion
+
+    # Define criteria needed for classification (thresholds and hyperplane-parameters)
+    thr_csf = 0.10
+    thr_HFC = 0.35
+    hyp = np.array([-19.9751070082159, 9.95127547670627, 24.8333160239175])
+    
+    # Project edge & maxRPcorr feature scores to new 1D space
+    x = np.array([maxRPcorr, edgeFract])
+    proj = hyp[0] + np.dot(x.T,hyp[1:])
+
+    # Classify the ICs
+    motionICs = np.squeeze(np.array(np.where((proj > 0) + (csfFract > thr_csf) + (HFC > thr_HFC))))
+
+    return motionICs
+
+def denoising(fslDir, inFile, outDir, melmix, denType, denIdx):
+    """ 
+    Taken from https://github.com/rhr-pruim/ICA-AROMA
+    This function classifies the ICs based on the four features; maximum RP correlation, high-frequency content, edge-fraction and CSF-fraction
+
+    Parameters
+    ---------------------------------------------------------------------------------
+    fslDir:     Full path of the bin-directory of FSL
+    inFile:     Full path to the data file (nii.gz) which has to be denoised
+    outDir:     Full path of the output directory
+    melmix:     Full path of the melodic_mix text file
+    denType:    Type of requested denoising ('aggr': aggressive, 'nonaggr': non-aggressive, 'both': both aggressive and non-aggressive 
+    denIdx:     Indices of the components that should be regressed out
+
+    Output (within the requested output directory)
+    ---------------------------------------------------------------------------------
+    denoised_func_data_<denType>.nii.gz:        A nii.gz file of the denoised fMRI data"""
+
+    # Check if denoising is needed (i.e. are there components classified as motion)
+    check = len(denIdx) > 0
+
+    if check==1:
+        # Put IC indices into a char array
+        denIdxStr = np.char.mod('%i',(denIdx+1))
+
+        # Non-aggressive denoising of the data using fsl_regfilt (partial regression), if requested
+        if (denType == 'nonaggr') or (denType == 'both'):       
+            os.system(' '.join([op.join(fslDir,'fsl_regfilt'),
+                '--in=' + inFile,
+                '--design=' + melmix,
+                '--filter="' + ','.join(denIdxStr) + '"',
+                '--out=' + op.join(outDir,'denoised_func_data_nonaggr.nii.gz')]))
+
+        # Aggressive denoising of the data using fsl_regfilt (full regression)
+        if (denType == 'aggr') or (denType == 'both'):
+            os.system(' '.join([op.join(fslDir,'fsl_regfilt'),
+                '--in=' + inFile,
+                '--design=' + melmix,
+                '--filter="' + ','.join(denIdxStr) + '"',
+                '--out=' + op.join(outDir,'denoised_func_data_aggr.nii.gz'),
+                '-a']))
+    else:
+        print("  - None of the components was classified as motion, so no denoising is applied (a symbolic link to the input file will be created).")
+        if (denType == 'nonaggr') or (denType == 'both'):
+            os.symlink(inFile,op.join(outDir,'denoised_func_data_nonaggr.nii.gz'))
+        if (denType == 'aggr') or (denType == 'both'):
+            os.symlink(inFile,op.join(outDir,'denoised_func_data_aggr.nii.gz'))
+
+
 ## 
 #  @brief Replace censored time point by linear interpolation
 #  
@@ -686,7 +1058,7 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
             tseries[censored] = intpts
             data[i,:] = tseries
         else:
-            print "Wrong interpolation method: nothing was done"
+            print("Wrong interpolation method: nothing was done")
             break
     return data
 
@@ -791,11 +1163,11 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
                 X = np.loadtxt(melmix)
                 # if filtering has already been performed, regressors need to be filtered too
                 if len(config.filtering)>0:
-                    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+                    nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
                     X = filter_regressors(X, config.filtering, nTRs, TR)  
 
                 if config.doScrubbing:
-                    nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+                    nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
                     toCensor = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
                     npts = toCensor.size
                     if npts==1:
@@ -805,19 +1177,19 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
                         toReg[toCensor[i],i] = 1
                     X = np.concatenate((X, toReg), axis=1)
                     
-                nRows, nCols, nSlices, nTRs, affine, TR = imgInfo
+                nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
                 niiImg[0] = partial_regress(niiImg[0], nTRs, TR, X, motionICs, config.preWhitening)
                 if niiImg[1] is not None:
                     niiImg[1] = partial_regress(niiImg[1], nTRs, TR, X, motionICs, config.preWhitening)
                 return niiImg[0],niiImg[1]
             else:
-                print 'Warning! Wrong ICA-AROMA flavor. Using default full regression.'
+                print('Warning! Wrong ICA-AROMA flavor. Using default full regression.')
                 X = np.loadtxt(melmix)[:,motionICs]
         else:
-            print 'ICA-AROMA: None of the components was classified as motion, so no denoising is applied.'
+            print('ICA-AROMA: None of the components was classified as motion, so no denoising is applied.')
             X = np.empty((nTRs, 0))
     else:
-        print 'Wrong flavor, using default regressors: R dR'
+        print('Wrong flavor, using default regressors: R dR')
         X = data
         
     # if filtering has already been performed, regressors need to be filtered too
@@ -899,7 +1271,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         censored = np.where(score>thr)
         np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
     else:
-        print 'Wrong scrubbing flavor. Nothing was done'
+        print('Wrong scrubbing flavor. Nothing was done')
         return niiImg[0],niiImg[1]
     
     if (len(flavor)>3 and flavor[0] == 'FD+DVARS'):
@@ -933,7 +1305,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     if len(censored)>0 and len(censored)<nTRs:
         config.doScrubbing = True
     if len(censored) == nTRs:
-        print 'Warning! All points selected for censoring: scrubbing will not be performed.'
+        print('Warning! All points selected for censoring: scrubbing will not be performed.')
 
     #even though these haven't changed, they are returned for consistency with other operations
     return niiImg[0],niiImg[1]
@@ -1001,7 +1373,7 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         meanWM = meanWM/max(meanWM)
         X = meanWM[:,np.newaxis]   
     else:
-        print 'Warning! Wrong tissue regression flavor. Nothing was done'
+        print('Warning! Wrong tissue regression flavor. Nothing was done')
     
     if flavor[-1] == 'GM':
         if config.isCifti:
@@ -1019,7 +1391,7 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
     elif flavor[-1] == 'wholebrain':
         return X
     else:
-        print 'Warning! Wrong tissue regression flavor. Nothing was done'
+        print('Warning! Wrong tissue regression flavor. Nothing was done')
         
 def Detrending(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
@@ -1043,7 +1415,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:]) 
         else:
-            print 'Warning! Wrong detrend flavor. Nothing was done'
+            print('Warning! Wrong detrend flavor. Nothing was done')
         niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
         volData[np.logical_or(maskWM_,maskCSF_),:] = niiImgWMCSF
     elif flavor[2] == 'GM':
@@ -1076,10 +1448,10 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:])        
         else:
-            print 'Warning! Wrong detrend flavor. Nothing was done'
+            print('Warning! Wrong detrend flavor. Nothing was done')
         return y[1:nPoly,:].T    
     else:
-        print 'Warning! Wrong detrend mask. Nothing was done' 
+        print('Warning! Wrong detrend mask. Nothing was done' )
 
     if config.isCifti:
         niiImg[1] = volData
@@ -1128,7 +1500,7 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         K = K[:,np.concatenate((range(1,nHP),range(int(nLP)-1,nTRs)))]
         return K
     else:
-        print 'Warning! Wrong temporal filtering flavor. Nothing was done'    
+        print('Warning! Wrong temporal filtering flavor. Nothing was done')
         return niiImg[0],niiImg[1]
 
     config.filtering = flavor
@@ -1153,7 +1525,7 @@ def GlobalSignalRegression(niiImg, flavor, masks, imgInfo):
         X  = np.concatenate((meanAll[:,np.newaxis], dtGS[:,np.newaxis], sqGS[:,np.newaxis], sqdtGS[:,np.newaxis]), axis=1)
         return X
     else:
-        print 'Warning! Wrong normalization flavor. Using defalut regressor: GS'
+        print('Warning! Wrong normalization flavor. Using defalut regressor: GS')
         return meanAll[:,np.newaxis]
 
 def VoxelNormalization(niiImg, flavor, masks, imgInfo):
@@ -1166,7 +1538,7 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
         close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
         if close0.shape[0] > 0:
             meanImg[close0,0] = np.max(np.abs(niiImg[0][close0,:]),axis=1)
-	    niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
+            niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
         niiImg[0] = 100 * (niiImg[0] - meanImg) / meanImg
         niiImg[0][np.where(np.isnan(niiImg[0]))] = 0
         if niiImg[1] is not None:
@@ -1174,7 +1546,7 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
             close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
             if close0.shape[0] > 0:
                 meanImg[close0,0] = np.max(np.abs(niiImg[1][close0,:]),axis=1)
-	        niiImg[1][close0,:] = niiImg[1][close0,:] + meanImg[close0,:]
+                niiImg[1][close0,:] = niiImg[1][close0,:] + meanImg[close0,:]
             niiImg[1] = 100 * (niiImg[1] - meanImg) / meanImg
             niiImg[1][np.where(np.isnan(niiImg[1]))] = 0
     elif flavor[0] == 'demean':
@@ -1182,7 +1554,7 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
         if niiImg[1] is not None:
             niiImg[1] = niiImg[1] - niiImg[1].mean(1)[:,np.newaxis]
     else:
-        print 'Warning! Wrong normalization flavor. Nothing was done'
+        print('Warning! Wrong normalization flavor. Nothing was done')
     return niiImg[0],niiImg[1] 
 
 # Struct used to associate functions to operation names
@@ -1298,7 +1670,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
         fig.colorbar(im, cax=cbar_ax)
         # save figure
         fig.savefig(savePlotFile, bbox_inches='tight',dpi=75)
-        print "makeGrayPlot -- done in {:0.2f}s".format(time()-t)
+        print("makeGrayPlot -- done in {:0.2f}s".format(time()-t))
         sys.stdout.flush()
 
     else:
@@ -1315,7 +1687,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
 #  @brief Apply parcellation (output saved to file)
 #  
 def parcellate(overwrite=False):
-    print "entering parcellate (overwrite={})".format(overwrite)
+    print("entering parcellate (overwrite={})".format(overwrite))
     # After preprocessing, functional connectivity is computed
     tsDir = op.join(buildpath(),config.parcellationName)
     if not op.isdir(tsDir): mkdir(tsDir)
@@ -1360,7 +1732,7 @@ def parcellate(overwrite=False):
                 np.savetxt(tsFile,np.nanmean(data[np.where(allparcels==iParcel+1)[0],:],axis=0),fmt='%.16f',delimiter='\n')
 
         # concatenate all ts
-        print 'Concatenating data'
+        print('Concatenating data')
         cmd = 'paste '+op.join(tsDir,'parcel???.txt')+' > '+alltsFile
         call(cmd, shell=True)
 
@@ -1391,7 +1763,7 @@ def parcellate(overwrite=False):
                     np.savetxt(tsFileAll,np.transpose(data[np.where(allparcels==iParcel+1)[0],:]),fmt='%.16f',delimiter=',',newline='\n')
         
         # concatenate all ts
-        print 'Concatenating data'
+        print('Concatenating data')
         cmd = 'paste '+op.join(tsDir,'parcel???_{}.txt'.format(rstring))+' > '+alltsFile
         call(cmd, shell=True)
 
@@ -1401,7 +1773,7 @@ def parcellate(overwrite=False):
 #  @param [bool] overwrite True if existing files should be overwritten
 #  
 def computeFC(overwrite=False):
-    print "entering computeFC (overwrite={})".format(overwrite)
+    print("entering computeFC (overwrite={})".format(overwrite))
     tsDir = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
     ###################
     # original
@@ -1447,7 +1819,7 @@ def computeFC(overwrite=False):
 #  @return [tuple] functional connectivity matrix before and after denoising
 #     
 def plotFC(displayPlot=False,overwrite=False):
-    print "entering plotFC (overwrite={})".format(overwrite)
+    print("entering plotFC (overwrite={})".format(overwrite))
     savePlotFile=config.fmriFile_dn.replace(config.ext,'_'+config.parcellationName+'_fcMat.png')
 
     if not op.isfile(savePlotFile) or overwrite:
@@ -1587,7 +1959,7 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             if conMat is None:
                 conMat = np.array(np.ravel(conVec))
             else:
-                print confound,conMat.shape,conVec.shape
+                print(confound,conMat.shape,conVec.shape)
                 conMat = np.vstack((conMat,conVec))
         # if only one confound, transform to matrix
         if len(confounds)==1:
@@ -1598,26 +1970,26 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
         corrBef = []
         for i in range(len(confounds)):
             corrBef.append(stats.pearsonr(conMat[:,i].T,score)[0])
-        print 'maximum corr before decon: ',max(corrBef)
+        print('maximum corr before decon: ',max(corrBef))
 
         regr        = linear_model.LinearRegression()
         regr.fit(conMat[train_index,:], score[train_index])
         fittedvalues = regr.predict(conMat)
         score        = score - np.ravel(fittedvalues)
-        print score.shape
+        print(score.shape)
 
         corrAft = []
         for i in range(len(confounds)):
             corrAft.append(stats.pearsonr(conMat[:,i].T,score)[0])
-        print 'maximum corr after decon: ',max(corrAft)
+        print('maximum corr after decon: ',max(corrAft))
 
     # keep a copy of score
     score_ = np.copy(score)
 
     for thisPerm in iPerm: 
-        print "=  perm{:04d}  ==========".format(thisPerm)
-        print strftime("%Y-%m-%d %H:%M:%S", localtime())
-        print "========================="
+        print("=  perm{:04d}  ==========".format(thisPerm))
+        print(strftime("%Y-%m-%d %H:%M:%S", localtime()))
+        print("=========================")
         
         score = np.copy(score_)
         # REORDER SCORE!
@@ -1632,7 +2004,7 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
 
         outFile = op.join(outDir,'{:04d}'.format(thisPerm),'{}.mat'.format(
             '_'.join(['%s' % test_sub for test_sub in df['Subject'][test_index]])))
-        print outFile
+        print(outFile)
 
         if op.isfile(outFile) and not config.overwrite:
             continue
@@ -1646,7 +2018,7 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
         idx_filtered_neg = np.array([idx for idx in range(0,n_edges) if pears[idx][1]<filterThr and pears[idx][0]<0])
             
         if model=='Finn':
-            print model
+            print(model)
             lr  = linear_model.LinearRegression()
             # select edges (positively and negatively) correlated with score with threshold filterThr
             filtered_pos = edges[np.ix_(train_index,idx_filtered_pos)]
@@ -1669,11 +2041,11 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             lr_neg              = lr.fit(strength_neg.reshape(-1,1),score[train_index])
             predictions_neg     = lr_neg.predict(str_neg_test.reshape(-1,1))
             results = {'score':score[test_index],'pred_posneg':predictions_posneg,'pred_pos_neg':predictions_pos_neg, 'pred_pos':predictions_pos, 'pred_neg':predictions_neg,'idx_filtered_pos':idx_filtered_pos, 'idx_filtered_neg':idx_filtered_neg}
-            print 'saving results'
+            print('saving results')
             sio.savemat(outFile,results)
         
         elif model=='elnet':
-            print model
+            print(model)
             X_train, X_test, y_train, y_test = edges[np.ix_(train_index,idx_filtered)], edges[np.ix_(test_index,idx_filtered)], score[train_index], score[test_index]
             rbX            = RobustScaler()
             X_train        = rbX.fit_transform(X_train)
@@ -1689,14 +2061,14 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             start_time     = time()
             elnet.fit(X_train,y_train)
             elapsed_time   = time() - start_time
-            print "Trained ELNET in {0:02d}h:{1:02d}min:{2:02d}s".format(int(elapsed_time//3600),int((elapsed_time%3600)//60),int(elapsed_time%60))   
+            print("Trained ELNET in {0:02d}h:{1:02d}min:{2:02d}s".format(int(elapsed_time//3600),int((elapsed_time%3600)//60),int(elapsed_time%60)))
             # PREDICT
             X_test         = rbX.transform(X_test)
             if len(X_test.shape) == 1:
                 X_test     = X_test.reshape(1, -1)
             prediction     = elnet.predict(X_test)
             results        = {'score':y_test,'pred':prediction, 'coef':elnet.coef_, 'alpha':elnet.alpha_, 'l1_ratio':elnet.l1_ratio_, 'idx_filtered':idx_filtered}
-            print 'saving results'
+            print('saving results')
             sio.savemat(outFile,results)        
         sys.stdout.flush()
     
@@ -1746,9 +2118,9 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         thispythonfn += 'sys.stdout              = logFid\n'
         thispythonfn += 'sys.stderr              = logFid\n'
         # print date and time stamp
-        thispythonfn += 'print "========================="\n'
-        thispythonfn += 'print strftime("%Y-%m-%d %H:%M:%S", localtime())\n'
-        thispythonfn += 'print "========================="\n'
+        thispythonfn += 'print("=========================")\n'
+        thispythonfn += 'print(strftime("%Y-%m-%d %H:%M:%S", localtime()))\n'
+        thispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
         thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
@@ -1756,10 +2128,10 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         thispythonfn += 'config.release          = "{}"\n'.format(config.release)
         thispythonfn += 'config.behavFile        = "{}"\n'.format(config.behavFile)
         thispythonfn += 'config.overwrite        = {}\n'.format(config.overwrite)
-        thispythonfn += 'print "========================="\n'
-        thispythonfn += 'print "runPredictionJD(\'{}\',\'{}\')"\n'.format(fcMatFile, dataFile)
-        thispythonfn += 'print "========================="\n'
-        thispythonfn += 'print "========================="\n'
+        thispythonfn += 'print("=========================")\n'
+        thispythonfn += 'print("runPredictionJD(\'{}\',\'{}\')")\n'.format(fcMatFile, dataFile)
+        thispythonfn += 'print("=========================")\n'
+        thispythonfn += 'print("=========================")\n'
         str1 =  '['+','.join(['%s' % test_ind for test_ind in test_index])+']'
         str2 =  '['+','.join(['"%s"' % el for el in confounds])+']'
         str3 =  '['+','.join(['%s' % el for el in jPerm])+']'
@@ -1809,43 +2181,43 @@ def runPipeline():
     sortedOperations = config.sortedOperations
     
     timeStart = localtime()
-    print 'Step 0 : Building WM, CSF and GM masks...'
+    print('Step 0 : Building WM, CSF and GM masks...')
     masks = makeTissueMasks(overwrite=False)
     maskAll, maskWM_, maskCSF_, maskGM_ = masks    
 
     if config.isCifti:
         # volume
         volFile = op.join(buildpath(), config.fmriRun+'.nii.gz')
-        print 'Loading [volume] data in memory... {}'.format(volFile)
+        print('Loading [volume] data in memory... {}'.format(volFile))
         volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         # cifti
-        print 'Loading [cifti] data in memory... {}'.format(config.fmriFile.replace('.dtseries.nii','.tsv'))
+        print('Loading [cifti] data in memory... {}'.format(config.fmriFile.replace('.dtseries.nii','.tsv')))
         if not op.isfile(config.fmriFile.replace('.dtseries.nii','.tsv')):
             cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,config.fmriFile.replace('.dtseries.nii','.tsv'))
             call(cmd,shell=True)
         data = pd.read_csv(config.fmriFile.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
     else:
         volFile = config.fmriFile
-        print 'Loading [volume] data in memory... {}'.format(config.fmriFile)
+        print('Loading [volume] data in memory... {}'.format(config.fmriFile))
         data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         volData = None
        
     nsteps = len(steps)
     for i in range(1,nsteps+1):
         step = steps[i]
-        print 'Step '+str(i)+' '+str(step)
+        print('Step '+str(i)+' '+str(step))
         if len(step) == 1:
             # Atomic operations
             if 'Regression' in step[0] or ('wholebrain' in Flavors[i][0]):
                 if ((step[0]=='TissueRegression' and 'GM' in Flavors[i][0] and 'wholebrain' not in Flavors[i][0]) or
                    (step[0]=='MotionRegression' and 'nonaggr' in Flavors[i][0])): 
                     #regression constrained to GM
-                    data, volData = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                    data, volData = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                 else:
-                    r0 = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                    r0 = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                     data = regress(data, nTRs, TR, r0, config.preWhitening)
             else:
-                data, volData = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                data, volData = Hooks[step[0]]([data,volData], Flavors[i][0], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
         else:
             # When multiple regression steps have the same order, all the regressors are combined
             # and a single regression is performed (other operations are executed in order)
@@ -1856,12 +2228,12 @@ def runPipeline():
                     if ((opr=='TissueRegression' and 'GM' in Flavors[i][j] and 'wholebrain' not in Flavors[i][j]) or
                        (opr=='MotionRegression' and 'nonaggr' in Flavors[i][j])): 
                         #regression constrained to GM
-                        data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                        data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                     else:    
-                        r0 = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                        r0 = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                         r = np.append(r, r0, axis=1)
                 else:
-                    data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR])
+                    data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
             if r.shape[1] > 0:
                 data = regress(data, nTRs, TR, r, config.preWhitening)    
         data[np.isnan(data)] = 0
@@ -1869,7 +2241,7 @@ def runPipeline():
             volData[np.isnan(volData)] = 0
 
 
-    print 'Done! Copy the resulting file...'
+    print('Done! Copy the resulting file...')
     rstring = ''.join(random.SystemRandom().choice(string.ascii_lowercase +string.ascii_uppercase + string.digits) for _ in range(8))
     outDir  = buildpath()
     outFile = config.fmriRun+'_prepro_'+rstring
@@ -1891,7 +2263,7 @@ def runPipeline():
     outXML = rstring+'.xml'
     conf2XML(config.fmriFile, config.DATADIR, sortedOperations, timeStart, timeEnd, op.join(buildpath(),outXML))
 
-    print 'Preprocessing complete. '
+    print('Preprocessing complete. ')
     config.fmriFile_dn = op.join(outDir,outFile+config.ext)
 
     return
@@ -1924,7 +2296,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
             config.fmriFile = op.join(buildpath(), config.fmriRun+config.suffix+'.nii.gz')
     
     if not op.isfile(config.fmriFile):
-        print config.subject, 'missing'
+        print(config.fmriFile, 'missing')
         sys.stdout.flush()
         return False
 
@@ -2005,9 +2377,9 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
         thispythonfn += 'sys.stdout              = logFid\n'
         thispythonfn += 'sys.stderr              = logFid\n'
         # print date and time stamp
-        thispythonfn += 'print "========================="\n'
-        thispythonfn += 'print strftime("%Y-%m-%d %H:%M:%S", localtime())\n'
-        thispythonfn += 'print "========================="\n'
+        thispythonfn += 'print("=========================")\n'
+        thispythonfn += 'print(strftime("%Y-%m-%d %H:%M:%S", localtime()))\n'
+        thispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.subject          = "{}"\n'.format(config.subject)
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
         thispythonfn += 'config.fmriRun          = "{}"\n'.format(config.fmriRun)
@@ -2074,7 +2446,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
             sys.stdout.flush()
             process = Popen(thisScript,shell=True)
             config.joblist.append(process)
-            print 'submitted {}'.format(jobName)
+            print('submitted {}'.format(jobName))
     
     else:
     
@@ -2136,10 +2508,10 @@ def checkProgress(pause=60,verbose=False):
                 break
             else:
                 if verbose:
-                    print 'Waiting for {} jobs to complete...'.format(nleft)
+                    print('Waiting for {} jobs to complete...'.format(nleft))
             sleep(pause)
     if verbose:
-        print 'All done!!' 
+        print('All done!!')
     return True
 
 # Compute Cronbach's Alpha
@@ -2197,7 +2569,7 @@ def factor_analysis(X,s=2):
         if g: c[g] = 1
         if np.max(np.abs(c-p))<0.001:
             break
-    print 'Factorial number of iterations:', i+1
+    print('Factorial number of iterations:', i+1)
     # evaluation of factor loadings and communalities estimation
     B = np.hstack((N,c[:,np.newaxis]))
     # normalization of factor loadings
@@ -2213,7 +2585,7 @@ def factor_analysis(X,s=2):
         z = np.sum(S)
         if np.abs(z -b) < 0.00001:
             break
-    print 'Rotational number of iterations:',l+1
+    print('Rotational number of iterations:',l+1)
     # unnormalization of factor loadings
     L = L * h[:,np.newaxis]
     # factors computation by regression and variance proportions
