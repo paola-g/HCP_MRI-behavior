@@ -268,7 +268,7 @@ config.operationDict = {
 #  
 def filter_regressors(regressors, filtering, nTRs, TR):
     if len(filtering)==0:
-        print 'Error! Missing or wrong filtering flavor. Regressors were not filtered.'
+        print('Error! Missing or wrong filtering flavor. Regressors were not filtered.')
     else:
         if filtering[0] == 'Butter':
             regressors = clean(regressors, detrend=False, standardize=False, 
@@ -289,7 +289,7 @@ def filter_regressors(regressors, filtering, nTRs, TR):
 #  @return [numpy.array] residuals of regression, same dimensions as data
 #  	
 def regress(data, nTRs, TR, regressors, preWhitening=False):
-    print 'Starting regression with {} regressors...'.format(regressors.shape[1])
+    print('Starting regression with {} regressors...'.format(regressors.shape[1]))
     if preWhitening:
         W = prewhitening(data, nTRs, TR, regressors)
         data = np.dot(data,W)
@@ -302,7 +302,7 @@ def regress(data, nTRs, TR, regressors, preWhitening=False):
     resid = data - fittedvalues.T
     data = resid
     elapsed_time = time() - start_time
-    print 'Regression completed in {:02d}h{:02d}min{:02d}s'.format(int(np.floor(elapsed_time/3600)),int(np.floor((elapsed_time%3600)/60)),int(np.floor(elapsed_time%60))) 
+    print('Regression completed in {:02d}h{:02d}min{:02d}s'.format(int(np.floor(elapsed_time/3600)),int(np.floor((elapsed_time%3600)/60)),int(np.floor(elapsed_time%60))))
     return data
 	
 ## 
@@ -725,7 +725,7 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
             tseries[censored] = intpts
             data[i,:] = tseries
         else:
-            print "Wrong interpolation method: nothing was done"
+            print("Wrong interpolation method: nothing was done")
             break
     return data
 
@@ -785,7 +785,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
     elif flavor[0] == 'R dR':
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
-	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
+        X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
         X = np.hstack([X1,X2]) 
         X = signal.detrend(X,axis=0,type='constant') # demean
         X = signal.detrend(X,axis=0,type='linear') # linear detrending
@@ -799,7 +799,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
     elif flavor[0] == 'R dR R^2 dR^2':
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
-	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
+        X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
         X12 = np.hstack([X1,X2]) 
         X12 = signal.detrend(X12,axis=0,type='constant') # demean
         X12 = signal.detrend(X12,axis=0,type='linear') # linear detrending
@@ -828,10 +828,10 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
         X = np.empty((nTRs, 0))
     else:
-        print 'Wrong flavor, using default regressors: R dR'
+        print('Wrong flavor, using default regressors: R dR')
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         X1[:,3:] = np.degrees(X1[:,3:]) # as in HCP
-	X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
+        X2 = np.vstack([np.zeros(6),np.apply_along_axis(np.diff,0,X1)])
         X = np.hstack([X1,X2]) 
         X = signal.detrend(X,axis=0,type='constant') # demean
         X = signal.detrend(X,axis=0,type='linear') # linear detrending
@@ -920,7 +920,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         censored = np.where(score>thr)
         np.savetxt(op.join(outpath(), '{}.txt'.format(flavor[0])), score, delimiter='\n', fmt='%d')
     else:
-        print 'Wrong scrubbing flavor. Nothing was done'
+        print('Wrong scrubbing flavor. Nothing was done')
         return niiImg[0],niiImg[1]
     
     if (len(flavor)>3 and flavor[0] == 'FD+DVARS'):
@@ -954,7 +954,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     if len(censored)>0 and len(censored)<nTRs:
         config.doScrubbing = True
     if len(censored) == nTRs:
-        print 'Warning! All points selected for censoring: scrubbing will not be performed.'
+        print('Warning! All points selected for censoring: scrubbing will not be performed.')
 
     #even though these haven't changed, they are returned for consistency with other operations
     return niiImg[0],niiImg[1]
@@ -1025,7 +1025,7 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
         meanWM = meanWM/max(meanWM)
         X = meanWM[:,np.newaxis]
     else:
-        print 'Warning! Wrong tissue regression flavor. Nothing was done'
+        print('Warning! Wrong tissue regression flavor. Nothing was done')
     
     if flavor[-1] == 'GM':
         if config.isCifti:
@@ -1043,7 +1043,7 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
     elif flavor[-1] == 'wholebrain':
         return X
     else:
-        print "Warning! Last option of TissueRegression should be either 'GM' or 'wholebrain'. Nothing was done"
+        print("Warning! Last option of TissueRegression should be either 'GM' or 'wholebrain'. Nothing was done")
         
 def Detrending(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
@@ -1067,7 +1067,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:]) 
         else:
-            print 'Warning! Wrong detrend flavor. Nothing was done'
+            print('Warning! Wrong detrend flavor. Nothing was done')
         niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
         volData[np.logical_or(maskWM_,maskCSF_),:] = niiImgWMCSF
     elif flavor[2] == 'GM':
@@ -1100,10 +1100,10 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:])        
         else:
-            print 'Warning! Wrong detrend flavor. Nothing was done'
+            print('Warning! Wrong detrend flavor. Nothing was done')
         return y[1:nPoly,:].T    
     else:
-        print 'Warning! Wrong detrend mask. Nothing was done' 
+        print('Warning! Wrong detrend mask. Nothing was done' )
 
     if config.isCifti:
         niiImg[1] = volData
@@ -1152,7 +1152,7 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         X = X.filter(regex=("cosine*"))
         return np.array(X)
     else:
-        print 'Warning! Wrong temporal filtering flavor. Nothing was done'    
+        print('Warning! Wrong temporal filtering flavor. Nothing was done'    )
         return niiImg[0],niiImg[1]
 
     config.filtering = flavor
@@ -1176,7 +1176,7 @@ def GlobalSignalRegression(niiImg, flavor, masks, imgInfo):
         X  = np.concatenate((GS[:,np.newaxis], dtGS[:,np.newaxis], sqGS[:,np.newaxis], sqdtGS[:,np.newaxis]), axis=1)
         return X
     else:
-        print 'Warning! Wrong normalization flavor. Using defalut regressor: GS'
+        print('Warning! Wrong normalization flavor. Using defalut regressor: GS')
         return GS[:,np.newaxis]
 
 def VoxelNormalization(niiImg, flavor, masks, imgInfo):
@@ -1189,7 +1189,7 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
         close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
         if close0.shape[0] > 0:
             meanImg[close0,0] = np.max(np.abs(niiImg[0][close0,:]),axis=1)
-	    niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
+            niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
         niiImg[0] = 100 * (niiImg[0] - meanImg) / meanImg
         niiImg[0][np.where(np.isnan(niiImg[0]))] = 0
         if niiImg[1] is not None:
@@ -1197,7 +1197,7 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
             close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
             if close0.shape[0] > 0:
                 meanImg[close0,0] = np.max(np.abs(niiImg[1][close0,:]),axis=1)
-	        niiImg[1][close0,:] = niiImg[1][close0,:] + meanImg[close0,:]
+                niiImg[1][close0,:] = niiImg[1][close0,:] + meanImg[close0,:]
             niiImg[1] = 100 * (niiImg[1] - meanImg) / meanImg
             niiImg[1][np.where(np.isnan(niiImg[1]))] = 0
     elif flavor[0] == 'demean':
@@ -1205,7 +1205,7 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
         if niiImg[1] is not None:
             niiImg[1] = niiImg[1] - niiImg[1].mean(1)[:,np.newaxis]
     else:
-        print 'Warning! Wrong normalization flavor. Nothing was done'
+        print('Warning! Wrong normalization flavor. Nothing was done')
     return niiImg[0],niiImg[1] 
 
 # Struct used to associate functions to operation names
@@ -1243,7 +1243,7 @@ def computeFD(lowpass=None):
 #  
 def makeGrayPlot(displayPlot=False,overwrite=False):
     savePlotFile = config.fmriFile_dn.replace(config.ext,'_grayplot.png')
-    print savePlotFile
+    print(savePlotFile)
     if not op.isfile(savePlotFile) or overwrite:
         # FD
         t = time()
@@ -1322,7 +1322,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
         fig.colorbar(im, cax=cbar_ax)
         # save figure
         fig.savefig(savePlotFile, bbox_inches='tight',dpi=75)
-        print "makeGrayPlot -- done in {:0.2f}s".format(time()-t)
+        print("makeGrayPlot -- done in {:0.2f}s".format(time()-t))
         sys.stdout.flush()
 
     else:
@@ -1339,7 +1339,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
 #  @brief Apply parcellation (output saved to file)
 #  
 def parcellate(overwrite=False):
-    print "entering parcellate (overwrite={})".format(overwrite)
+    print("entering parcellate (overwrite={})".format(overwrite))
     # After preprocessing, functional connectivity is computed
     tsDir = op.join(outpath(),config.parcellationName)
     if not op.isdir(tsDir): mkdir(tsDir)
@@ -1385,7 +1385,7 @@ def parcellate(overwrite=False):
                 np.savetxt(tsFile,np.nanmean(data[np.where(allparcels==iParcel+1)[0],:],axis=0),fmt='%.16f',delimiter='\n')
 
         # concatenate all ts
-        print 'Concatenating data'
+        print('Concatenating data')
         cmd = 'paste '+op.join(tsDir,'parcel???.txt')+' > '+alltsFile
         call(cmd, shell=True)
 
@@ -1416,9 +1416,76 @@ def parcellate(overwrite=False):
                     np.savetxt(tsFileAll,np.transpose(data[np.where(allparcels==iParcel+1)[0],:]),fmt='%.16f',delimiter=',',newline='\n')
         
         # concatenate all ts
-        print 'Concatenating data'
+        print('Concatenating data')
         cmd = 'paste '+op.join(tsDir,'parcel???_{}.txt'.format(rstring))+' > '+alltsFile
         call(cmd, shell=True)
+
+def getAllFC(subjectList, runs, parcellation, sessions=None,fcMatFile='fcMats.mat', kind='correlation',overwrite=True):
+    if (not op.isfile(fcMatFile)) or overwrite:
+        measure     = connectome.ConnectivityMeasure(
+        cov_estimator=LedoitWolf(assume_centered=False, block_size=1000, store_precision=False),
+        kind = kind,
+        vectorize=True, 
+        discard_diagonal=True)
+
+        iSub= 0
+        ts_all = list()
+        for subject in subjectList:
+            config.subject = str(subject)
+            if sessions:
+                iRun = 0
+                for config.session in sessions:
+                    for config.fmriRun in runs:
+                        # retrieve the name of the denoised fMRI file
+                        runPipelinePar(launchSubproc=False)
+                        # retrieve time courses of parcels
+                        tsDir     = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
+                        rstring   = get_rcode(config.fmriFile_dn)
+                        tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+                        ts        = np.genfromtxt(tsFile,delimiter="\t")
+                        # standardize
+                        ts -= ts.mean(axis=0)
+                        ts /= ts.std(axis=0)
+                        if iRun==0:
+                            allts = ts
+                        else:
+                            allts = np.concatenate((allts,ts),axis=0)
+                        iRun = iRun + 1
+            
+            else:
+                iRun = 0
+                for config.fmriRun in runs:
+                    # retrieve the name of the denoised fMRI file
+                    runPipelinePar(launchSubproc=False)
+                    # retrieve time courses of parcels
+                    tsDir     = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
+                    rstring   = get_rcode(config.fmriFile_dn)
+                    tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+                    ts        = np.genfromtxt(tsFile,delimiter="\t")
+                    # standardize
+                    ts -= ts.mean(axis=0)
+                    ts /= ts.std(axis=0)
+                    if iRun==0:
+                        allts = ts
+                    else:
+                        allts = np.concatenate((allts,ts),axis=0)
+                    iRun = iRun + 1
+            ts_all.append(allts)
+            iSub = iSub + 1
+        # compute connectivity matrix
+        fcMats = measure.fit_transform(ts_all)
+        # SAVE fcMats
+        results      = {}
+        results['fcMats'] = fcMats
+        results['subjects'] = np.str(np.asarray(newdf['Subject']))
+        results['runs'] = np.array(runs)
+        results['sessions'] = np.array(sessions)
+        results['kind'] = kind
+        sio.savemat(fcMatFile, results)
+    else:
+        results = sio.loadmat(fcMatFile)
+        return results['fcMats']
+ 
 
 ## 
 #  @brief Compute functional connectivity matrix (output saved to file)
@@ -1426,7 +1493,7 @@ def parcellate(overwrite=False):
 #  @param [bool] overwrite True if existing files should be overwritten
 #  
 def computeFC(overwrite=False):
-    print "entering computeFC (overwrite={})".format(overwrite)
+    print("entering computeFC (overwrite={})".format(overwrite))
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
     tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     ###################
@@ -1473,7 +1540,7 @@ def computeFC(overwrite=False):
 #  @return [tuple] functional connectivity matrix before and after denoising
 #     
 def plotFC(displayPlot=False,overwrite=False):
-    print "entering plotFC (overwrite={})".format(overwrite)
+    print("entering plotFC (overwrite={})".format(overwrite))
     savePlotFile=config.fmriFile_dn.replace(config.ext,'_'+config.parcellationName+'_fcMat.png')
 
     if not op.isfile(savePlotFile) or overwrite:
@@ -1610,7 +1677,7 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             if conMat is None:
                 conMat = np.array(np.ravel(conVec))
             else:
-                print confound,conMat.shape,conVec.shape
+                print(confound,conMat.shape,conVec.shape)
                 conMat = np.vstack((conMat,conVec))
         # if only one confound, transform to matrix
         if len(confounds)==1:
@@ -1621,26 +1688,26 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
         corrBef = []
         for i in range(len(confounds)):
             corrBef.append(stats.pearsonr(conMat[:,i].T,score)[0])
-        print 'maximum corr before decon: ',max(corrBef)
+        print('maximum corr before decon: ',max(corrBef))
 
         regr        = linear_model.LinearRegression()
         regr.fit(conMat[train_index,:], score[train_index])
         fittedvalues = regr.predict(conMat)
         score        = score - np.ravel(fittedvalues)
-        print score.shape
+        print(score.shape)
 
         corrAft = []
         for i in range(len(confounds)):
             corrAft.append(stats.pearsonr(conMat[:,i].T,score)[0])
-        print 'maximum corr after decon: ',max(corrAft)
+        print('maximum corr after decon: ',max(corrAft))
 
     # keep a copy of score
     score_ = np.copy(score)
 
     for thisPerm in iPerm: 
-        print "=  perm{:04d}  ==========".format(thisPerm)
-        print strftime("%Y-%m-%d %H:%M:%S", localtime())
-        print "========================="
+        print("=  perm{:04d}  ==========".format(thisPerm))
+        print(strftime("%Y-%m-%d %H:%M:%S", localtime()))
+        print("=========================")
         
         score = np.copy(score_)
         # REORDER SCORE!
@@ -1655,7 +1722,7 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
 
         outFile = op.join(outDir,'{:04d}'.format(thisPerm),'{}.mat'.format(
             '_'.join(['%s' % test_sub for test_sub in df['Subject'][test_index]])))
-        print outFile
+        print(outFile)
 
         if op.isfile(outFile) and not config.overwrite:
             continue
@@ -1669,7 +1736,7 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
         idx_filtered_neg = np.array([idx for idx in range(0,n_edges) if pears[idx][1]<filterThr and pears[idx][0]<0])
             
         if model=='Finn':
-            print model
+            print(model)
             lr  = linear_model.LinearRegression()
             # select edges (positively and negatively) correlated with score with threshold filterThr
             filtered_pos = edges[np.ix_(train_index,idx_filtered_pos)]
@@ -1692,11 +1759,11 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             lr_neg              = lr.fit(strength_neg.reshape(-1,1),score[train_index])
             predictions_neg     = lr_neg.predict(str_neg_test.reshape(-1,1))
             results = {'score':score[test_index],'pred_posneg':predictions_posneg,'pred_pos_neg':predictions_pos_neg, 'pred_pos':predictions_pos, 'pred_neg':predictions_neg,'idx_filtered_pos':idx_filtered_pos, 'idx_filtered_neg':idx_filtered_neg}
-            print 'saving results'
+            print('saving results')
             sio.savemat(outFile,results)
         
         elif model=='elnet':
-            print model
+            print(model)
             X_train, X_test, y_train, y_test = edges[np.ix_(train_index,idx_filtered)], edges[np.ix_(test_index,idx_filtered)], score[train_index], score[test_index]
             rbX            = RobustScaler()
             X_train        = rbX.fit_transform(X_train)
@@ -1712,14 +1779,14 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             start_time     = time()
             elnet.fit(X_train,y_train)
             elapsed_time   = time() - start_time
-            print "Trained ELNET in {0:02d}h:{1:02d}min:{2:02d}s".format(int(elapsed_time//3600),int((elapsed_time%3600)//60),int(elapsed_time%60))   
+            print("Trained ELNET in {0:02d}h:{1:02d}min:{2:02d}s".format(int(elapsed_time//3600),int((elapsed_time%3600)//60),int(elapsed_time%60))   )
             # PREDICT
             X_test         = rbX.transform(X_test)
             if len(X_test.shape) == 1:
                 X_test     = X_test.reshape(1, -1)
             prediction     = elnet.predict(X_test)
             results        = {'score':y_test,'pred':prediction, 'coef':elnet.coef_, 'alpha':elnet.alpha_, 'l1_ratio':elnet.l1_ratio_, 'idx_filtered':idx_filtered}
-            print 'saving results'
+            print('saving results')
             sio.savemat(outFile,results)        
         sys.stdout.flush()
     
@@ -1769,9 +1836,9 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         thispythonfn += 'sys.stdout              = logFid\n'
         thispythonfn += 'sys.stderr              = logFid\n'
         # print date and time stamp
-        thispythonfn += 'print "========================="\n'
-        thispythonfn += 'print strftime("%Y-%m-%d %H:%M:%S", localtime())\n'
-        uhispythonfn += 'print "========================="\n'
+        thispythonfn += 'print("=========================")\n'
+        thispythonfn += 'print(strftime("%Y-%m-%d %H:%M:%S", localtime()))\n'
+        uhispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
         thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
@@ -1779,10 +1846,10 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         thispythonfn += 'config.release          = "{}"\n'.format(config.release)
         thispythonfn += 'config.behavFile        = "{}"\n'.format(config.behavFile)
         thispythonfn += 'config.overwrite        = {}\n'.format(config.overwrite)
-        thispythonfn += 'print "========================="\n'
-        thispythonfn += 'print "runPredictionJD(\'{}\',\'{}\')"\n'.format(fcMatFile, dataFile)
-        thispythonfn += 'print "========================="\n'
-        thispythonfn += 'print "========================="\n'
+        thispythonfn += 'print("=========================")\n'
+        thispythonfn += 'print("runPredictionJD(\'{}\',\'{}\'))"\n'.format(fcMatFile, dataFile)
+        thispythonfn += 'print("=========================")\n'
+        thispythonfn += 'print("========================="\n'
         str1 =  '['+','.join(['%s' % test_ind for test_ind in test_index])+']'
         str2 =  '['+','.join(['"%s"' % el for el in confounds])+']'
         str3 =  '['+','.join(['%s' % el for el in jPerm])+']'
@@ -1832,32 +1899,32 @@ def runPipeline():
     sortedOperations = config.sortedOperations
     
     timeStart = localtime()
-    print 'Step 0 : Building WM, CSF and GM masks...'
+    print('Step 0 : Building WM, CSF and GM masks...')
     masks = makeTissueMasks(overwrite=False)
     maskAll, maskWM_, maskCSF_, maskGM_ = masks    
 
     if config.isCifti:
         # volume
-	prefix = config.session+'_' if  hasattr(config,'session')  else ''
+        prefix = config.session+'_' if  hasattr(config,'session')  else ''
         volFile = op.join(buildpath(), prefix+config.fmriRun+'.nii.gz')
-        print 'Loading [volume] data in memory... {}'.format(volFile)
+        print('Loading [volume] data in memory... {}'.format(volFile))
         volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         # cifti
-	print 'Loading [cifti] data in memory... {}'.format(config.fmriFile.replace('.dtseries.nii','.tsv'))
+        print('Loading [cifti] data in memory... {}'.format(config.fmriFile.replace('.dtseries.nii','.tsv')))
         if not op.isfile(config.fmriFile.replace('.dtseries.nii','.tsv')):
             cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,config.fmriFile.replace('.dtseries.nii','.tsv'))
             call(cmd,shell=True)
         data = pd.read_csv(config.fmriFile.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
     else:
         volFile = config.fmriFile
-        print 'Loading [volume] data in memory... {}'.format(config.fmriFile)
+        print('Loading [volume] data in memory... {}'.format(config.fmriFile))
         data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         volData = None
        
     nsteps = len(steps)
     for i in range(1,nsteps+1):
         step = steps[i]
-        print 'Step '+str(i)+' '+str(step)
+        print('Step '+str(i)+' '+str(step))
         if len(step) == 1:
             # Atomic operations
             if ('Regression' in step[0]) or ('TemporalFiltering' in step[0] and 'DCT' in Flavors[i][0]) or ('TemporalFiltering' in step[0] and 'CompCor' in Flavors[i][0]) or ('wholebrain' in Flavors[i][0]):
@@ -1891,7 +1958,7 @@ def runPipeline():
             volData[np.isnan(volData)] = 0
 
 
-    print 'Done! Copy the resulting file...'
+    print('Done! Copy the resulting file...')
     rstring = ''.join(random.SystemRandom().choice(string.ascii_lowercase +string.ascii_uppercase + string.digits) for _ in range(8))
     outDir  = outpath()
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
@@ -1914,7 +1981,7 @@ def runPipeline():
     outXML = rstring+'.xml'
     conf2XML(config.fmriFile, config.DATADIR, sortedOperations, timeStart, timeEnd, op.join(outpath(),outXML))
 
-    print 'Preprocessing complete. '
+    print('Preprocessing complete. ')
     config.fmriFile_dn = op.join(outDir,outFile+config.ext)
 
     return
@@ -1940,14 +2007,14 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
     if hasattr(config,'fmriFileTemplate'):
         config.fmriFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
     else:
-	prefix = config.session+'_' if  hasattr(config,'session')  else ''
+        prefix = config.session+'_' if  hasattr(config,'session')  else ''
         if config.isCifti:
             config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+config.ext)
         else:
             config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+config.ext)
     
     if not op.isfile(config.fmriFile):
-        print config.fmriFile, 'missing'
+        print(config.fmriFile, 'missing')
         sys.stdout.flush()
         return False
 
@@ -2028,9 +2095,9 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
         thispythonfn += 'sys.stdout              = logFid\n'
         thispythonfn += 'sys.stderr              = logFid\n'
         # print date and time stamp
-        thispythonfn += 'print "========================="\n'
-        thispythonfn += 'print strftime("%Y-%m-%d %H:%M:%S", localtime())\n'
-        thispythonfn += 'print "========================="\n'
+        thispythonfn += 'print("=========================")\n'
+        thispythonfn += 'print(strftime("%Y-%m-%d %H:%M:%S", localtime()))\n'
+        thispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.subject          = "{}"\n'.format(config.subject)
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
         thispythonfn += 'config.fmriRun          = "{}"\n'.format(config.fmriRun)
@@ -2095,7 +2162,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
             sys.stdout.flush()
             process = Popen(thisScript,shell=True)
             config.joblist.append(process)
-            print 'submitted {}'.format(jobName)
+            print('submitted {}'.format(jobName))
     
     else:
     
@@ -2158,10 +2225,10 @@ def checkProgress(pause=60,verbose=False):
                 break
             else:
                 if verbose:
-                    print 'Waiting for {} jobs to complete...'.format(nleft)
+                    print('Waiting for {} jobs to complete...'.format(nleft))
             sleep(pause)
     if verbose:
-        print 'All done!!' 
+        print('All done!!' )
     return True
 
 # Compute Cronbach's Alpha
@@ -2219,7 +2286,7 @@ def factor_analysis(X,s=2):
         if g: c[g] = 1
         if np.max(np.abs(c-p))<0.001:
             break
-    print 'Factorial number of iterations:', i+1
+    print('Factorial number of iterations:', i+1)
     # evaluation of factor loadings and communalities estimation
     B = np.hstack((N,c[:,np.newaxis]))
     # normalization of factor loadings
@@ -2235,7 +2302,7 @@ def factor_analysis(X,s=2):
         z = np.sum(S)
         if np.abs(z -b) < 0.00001:
             break
-    print 'Rotational number of iterations:',l+1
+    print('Rotational number of iterations:',l+1)
     # unnormalization of factor loadings
     L = L * h[:,np.newaxis]
     # factors computation by regression and variance proportions
