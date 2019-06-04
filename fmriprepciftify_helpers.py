@@ -55,6 +55,8 @@ from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
 from sklearn.covariance import MinCovDet,GraphLassoCV
 from nilearn.signal import clean
+from nilearn import connectome
+from sklearn.covariance import MinCovDet,GraphLassoCV,LedoitWolf
 import operator
 import gzip
 import string
@@ -678,7 +680,8 @@ def checkXML(inFile, operations, params, resDir, useMostRecent=True):
                 continue
             else:    
                 rcode = xfile.replace('.xml','')
-                return op.join(resDir,config.fmriRun+'_prepro_'+rcode+config.ext)
+                prefix = config.session+'_' if  hasattr(config,'session')  else ''
+                return op.join(resDir,prefix+config.fmriRun+'_prepro_'+rcode+config.ext)
     return None
 	
 ## 
@@ -1430,6 +1433,7 @@ def getAllFC(subjectList, runs, parcellation, sessions=None,fcMatFile='fcMats.ma
 
         iSub= 0
         ts_all = list()
+        allts = None
         for subject in subjectList:
             config.subject = str(subject)
             if sessions:
@@ -1437,9 +1441,28 @@ def getAllFC(subjectList, runs, parcellation, sessions=None,fcMatFile='fcMats.ma
                 for config.session in sessions:
                     for config.fmriRun in runs:
                         # retrieve the name of the denoised fMRI file
-                        runPipelinePar(launchSubproc=False)
+                        if runPipelinePar(launchSubproc=False, overwriteFC=False):
+                            # retrieve time courses of parcels
+                            prefix = config.session+'_' if  hasattr(config,'session')  else ''
+                            tsDir     = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
+                            rstring   = get_rcode(config.fmriFile_dn)
+                            tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+                            ts        = np.genfromtxt(tsFile,delimiter="\t")
+                            # standardize
+                            ts -= ts.mean(axis=0)
+                            ts /= ts.std(axis=0)
+                            if iRun==0:
+                                allts = ts
+                            else:
+                                allts = np.concatenate((allts,ts),axis=0) if allts is not None else ts
+                        iRun = iRun + 1
+            else:
+                iRun = 0
+                for config.fmriRun in runs:
+                    # retrieve the name of the denoised fMRI file
+                    if runPipelinePar(launchSubproc=False, overwriteFC=False):
                         # retrieve time courses of parcels
-                        tsDir     = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
+                        tsDir     = op.join(outpath(),config.parcellationName,config.fmriRun+config.ext)
                         rstring   = get_rcode(config.fmriFile_dn)
                         tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
                         ts        = np.genfromtxt(tsFile,delimiter="\t")
@@ -1450,41 +1473,24 @@ def getAllFC(subjectList, runs, parcellation, sessions=None,fcMatFile='fcMats.ma
                             allts = ts
                         else:
                             allts = np.concatenate((allts,ts),axis=0)
-                        iRun = iRun + 1
-            
-            else:
-                iRun = 0
-                for config.fmriRun in runs:
-                    # retrieve the name of the denoised fMRI file
-                    runPipelinePar(launchSubproc=False)
-                    # retrieve time courses of parcels
-                    tsDir     = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
-                    rstring   = get_rcode(config.fmriFile_dn)
-                    tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
-                    ts        = np.genfromtxt(tsFile,delimiter="\t")
-                    # standardize
-                    ts -= ts.mean(axis=0)
-                    ts /= ts.std(axis=0)
-                    if iRun==0:
-                        allts = ts
-                    else:
-                        allts = np.concatenate((allts,ts),axis=0)
                     iRun = iRun + 1
             ts_all.append(allts)
             iSub = iSub + 1
         # compute connectivity matrix
         fcMats = measure.fit_transform(ts_all)
+        print(fcMats.shape)
         # SAVE fcMats
         results      = {}
         results['fcMats'] = fcMats
-        results['subjects'] = np.str(np.asarray(newdf['Subject']))
+        results['subjects'] = subjectList
         results['runs'] = np.array(runs)
-        results['sessions'] = np.array(sessions)
+        if sessions: results['sessions'] = np.array(sessions)
         results['kind'] = kind
         sio.savemat(fcMatFile, results)
+        return results
     else:
         results = sio.loadmat(fcMatFile)
-        return results['fcMats']
+        return results
  
 
 ## 
@@ -1887,7 +1893,7 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
     if len(config.scriptlist)>0:
         # launch array job
         JobID = fnSubmitJobArrayFromJobList()
-        config.joblist.append(JobID.split('.')[0])
+        config.joblist.append(JobID.split(b'.')[0])
 
 ## 
 #  @brief Run preprocessing pipeline (output saved to file)
@@ -2001,8 +2007,8 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
     else:
         config.ext = '.nii.gz'
 
-    if config.overwrite:
-        overwriteFC = True
+#    if config.overwrite:
+#        overwriteFC = True
 
     if hasattr(config,'fmriFileTemplate'):
         config.fmriFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
@@ -2054,6 +2060,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                 config.Flavors[cstep].append(opr[2])
             prev_step = opr[1]                
     precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath()) 
+    print('>>',precomputed)
 
     if precomputed and not config.overwrite:
         do_makeGrayPlot    = False
