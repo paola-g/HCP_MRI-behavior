@@ -82,6 +82,7 @@ def buildpath():
         return op.join(config.DATADIR, 'hcp', config.subject,'MNINonLinear','Results',config.fmriRun)
 #    return op.join(config.DATADIR)
 
+
 #----------------------------------
 # function to build dinamycally output path (BIDS-like) 
 #----------------------------------
@@ -654,8 +655,9 @@ def sorted_ls(path, reverseOrder):
 #  @param [bool] useMostRecent True if most recent files should be checked first
 #  @return [str] preprocessed image file name if exists, None otherwise
 #  	
-def checkXML(inFile, operations, params, resDir, useMostRecent=True):
+def checkXML(inFile, operations, params, resDir, isCifti=False, useMostRecent=True):
     fileList = sorted_ls(resDir, useMostRecent)
+    ext = '.dtseries.nii' if isCifti else '.nii.gz'
     for xfile in fileList:
         if fnmatch.fnmatch(op.join(resDir,xfile), op.join(resDir,'????????.xml')):
             tree = ET.parse(op.join(resDir,xfile))
@@ -681,7 +683,8 @@ def checkXML(inFile, operations, params, resDir, useMostRecent=True):
             else:    
                 rcode = xfile.replace('.xml','')
                 prefix = config.session+'_' if  hasattr(config,'session')  else ''
-                return op.join(resDir,prefix+config.fmriRun+'_prepro_'+rcode+config.ext)
+                
+                return op.join(resDir,prefix+config.fmriRun+'_prepro_'+rcode+ext)
     return None
 	
 ## 
@@ -754,6 +757,51 @@ def get_affine(R, T, S=None):
     R_3x3 = np.dot(np.dot(Rx,Ry),Rz) 
     M = np.vstack((np.hstack((np.dot(R_3x3,S_3x3), T.reshape(-1,1))),[0,0,0,1]))
     return M
+
+def retrieve_preprocessed(inputFile, operations, outputDir, isCifti):
+    if not op.isfile(inputFile):
+        print(inputFile, 'missing')
+        sys.stdout.flush()
+        return None
+
+    sortedOperations = sorted(operations, key=operator.itemgetter(1))
+    steps            = {}
+    Flavors          = {}
+    cstep            = 0
+
+    # If requested, scrubbing is performed first, before any denoising step
+    scrub_idx = -1
+    curr_idx = -1
+    for opr in sortedOperations:
+        curr_idx = curr_idx+1
+        if opr[0] == 'Scrubbing' and opr[1] != 1 and opr[1] != 0:
+            scrub_idx = opr[1]
+            break
+            
+    if scrub_idx != -1:        
+        for opr in sortedOperations:  
+            if opr[1] != 0:
+                opr[1] = opr[1]+1
+
+        sortedOperations[curr_idx][1] = 1
+        sortedOperations = sorted(operations, key=operator.itemgetter(1))
+
+    prev_step = 0	
+    for opr in sortedOperations:
+        if opr[1]==0:
+            continue
+        else:
+            if opr[1]!=prev_step:
+                cstep=cstep+1
+                steps[cstep] = [opr[0]]
+                Flavors[cstep] = [opr[2]]
+            else:
+                steps[cstep].append(opr[0])
+                Flavors[cstep].append(opr[2])
+            prev_step = opr[1]                
+    precomputed = checkXML(inputFile,steps,Flavors,outputDir,isCifti) 
+    print('>>',precomputed)
+    return precomputed 
 
 # ---------------------
 # Pipeline Operations
@@ -1423,13 +1471,17 @@ def parcellate(overwrite=False):
         cmd = 'paste '+op.join(tsDir,'parcel???_{}.txt'.format(rstring))+' > '+alltsFile
         call(cmd, shell=True)
 
-def getAllFC(subjectList, runs, parcellation, sessions=None,fcMatFile='fcMats.mat', kind='correlation',overwrite=True):
+def getAllFC(subjectList,runs,parcellation,operations,outputDir=None,isCifti=False,sessions=None,fcMatFile='fcMats.mat',kind='correlation',overwrite=True):
     if (not op.isfile(fcMatFile)) or overwrite:
-        measure     = connectome.ConnectivityMeasure(
+        measure = connectome.ConnectivityMeasure(
         cov_estimator=LedoitWolf(assume_centered=False, block_size=1000, store_precision=False),
         kind = kind,
         vectorize=True, 
         discard_diagonal=True)
+        if config.isCifti:
+            ext = '.dtseries.nii'
+        else:
+            ext = '.nii.gz'
 
         iSub= 0
         ts_all = list()
@@ -1441,11 +1493,21 @@ def getAllFC(subjectList, runs, parcellation, sessions=None,fcMatFile='fcMats.ma
                 for config.session in sessions:
                     for config.fmriRun in runs:
                         # retrieve the name of the denoised fMRI file
-                        if runPipelinePar(launchSubproc=False, overwriteFC=False):
+                        if hasattr(config,'fmriFileTemplate'):
+                            inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
+                        else:
+                            prefix = config.session+'_'
+                            if isCifti:
+                                inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+ext)
+                            else:
+                                inputFile = op.join(buildpath(), prefix+config.fmriRun+ext)
+                        outputPath = outpath() if outputDir is None else outputDir
+                        preproFile = retrieve_preprocessed(inputFile, operations, outputPath, isCifti)
+                        if preproFile:
                             # retrieve time courses of parcels
-                            prefix = config.session+'_' if  hasattr(config,'session')  else ''
-                            tsDir     = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
-                            rstring   = get_rcode(config.fmriFile_dn)
+                            prefix = config.session+'_'
+                            tsDir     = op.join(outputPath,parcellation,prefix+config.fmriRun+ext)
+                            rstring   = get_rcode(preproFile)
                             tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
                             ts        = np.genfromtxt(tsFile,delimiter="\t")
                             # standardize
@@ -1460,10 +1522,19 @@ def getAllFC(subjectList, runs, parcellation, sessions=None,fcMatFile='fcMats.ma
                 iRun = 0
                 for config.fmriRun in runs:
                     # retrieve the name of the denoised fMRI file
-                    if runPipelinePar(launchSubproc=False, overwriteFC=False):
+                    if hasattr(config,'fmriFileTemplate'):
+                        inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
+                    else:
+                        if isCifti:
+                            inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+ext)
+                        else:
+                            inputFile = op.join(buildpath(), prefix+config.fmriRun+ext)
+                    outputPath = outpath() if (outputDir is None) else outputDir
+                    preproFile = retrieve_preprocessed(inputFile, operations, outputPath, isCifti)
+                    if preproFile:
                         # retrieve time courses of parcels
-                        tsDir     = op.join(outpath(),config.parcellationName,config.fmriRun+config.ext)
-                        rstring   = get_rcode(config.fmriFile_dn)
+                        tsDir     = op.join(outpath(),config.parcellationName,config.fmriRun+ext)
+                        rstring   = get_rcode(preproFile)
                         tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
                         ts        = np.genfromtxt(tsFile,delimiter="\t")
                         # standardize
@@ -2059,7 +2130,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                 config.steps[cstep].append(opr[0])
                 config.Flavors[cstep].append(opr[2])
             prev_step = opr[1]                
-    precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath()) 
+    precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath(),config.isCifti) 
     print('>>',precomputed)
 
     if precomputed and not config.overwrite:
