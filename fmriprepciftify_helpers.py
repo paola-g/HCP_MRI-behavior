@@ -1533,33 +1533,25 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                                 # standardize
                                 ts -= ts.mean(axis=0)
                                 ts /= ts.std(axis=0)
-                                if mergeSessions: 
-                                    ts_sub.append(ts) 
-                                    print('ts_sub.append(ts)') 
-                                else: 
-                                    ts_run.append(ts)
-                                    print('ts_run.append(ts)')
-                        if not mergeSessions:
-                            if mergeRuns: 
-                                if len(ts_run)>0:
-                                    ts_ses.append(np.concatenate(ts_run,axis=0))  
-                                    print('ts_ses.append(np.concatenate(ts_run,axis=0))')
-                            else: 
-                                FC_sub.append(measure.fit_transform(ts_run))
-                                print('FC_sub.append(measure.fit_transform(ts_run))')
+                                ts_sub.append(ts) 
+                                ts_run.append(ts)
+                        if len(ts_run)>0:
+                            ts_ses.append(np.concatenate(ts_run,axis=0))  
+                            print('ts_ses.append(np.concatenate(ts_run,axis=0))')
                     if not mergeSessions and mergeRuns:
                         FC_sub.append(measure.fit_transform(ts_ses)) 
                         print('FC_sub.append(measure.fit_transform(ts_ses))') 
                 else:
+                    mergeSessions = False
                     for config.fmriRun in runs:
                         # retrieve the name of the denoised fMRI file
                         if hasattr(config,'fmriFileTemplate'):
                             inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
                         else:
                             if isCifti:
-                                inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+ext)
+                                inputFile = op.join(buildpath(), config.fmriRun+'_Atlas_'+config.smoothing+ext)
                             else:
-                                inputFile = op.join(buildpath(), prefix+config.fmriRun+ext)
+                                inputFile = op.join(buildpath(), config.fmriRun+ext)
                         outputPath = outpath() if (outputDir is None) else outputDir
                         preproFile = retrieve_preprocessed(inputFile, operations, outputPath, isCifti)
                         if preproFile:
@@ -1571,19 +1563,19 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                             # standardize
                             ts -= ts.mean(axis=0)
                             ts /= ts.std(axis=0)
-                            if allts is None:
-                                allts = ts
-                            else:
-                                allts = np.concatenate((allts,ts),axis=0)
+                            ts_sub.append(ts)
                 if len(ts_sub)>0:
                     ts_all.append(np.concatenate(ts_sub, axis=0))
+                if not mergeSessions and not mergeRuns:
+                   FC_sub.append(measure.fit_transform(ts_sub))
+                   print('FC_sub.append(measure.fit_transform(ts_sub))')
         #else: # retrieve data from FCDir folder
 
         # compute connectivity matrix
-        if mergeSessions: 
+        if mergeSessions or (sessions is None and mergeRuns): 
             fcMats = measure.fit_transform(ts_all)
         else: 
-            fcMats = np.concatenate(FC_sub)
+            fcMats = np.vstack([np.mean(el,axis=0) for el in FC_sub])
         print(fcMats.shape)
         # SAVE fcMats
         results      = {}
