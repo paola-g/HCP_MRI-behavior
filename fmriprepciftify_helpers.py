@@ -1491,27 +1491,27 @@ def parcellate(overwrite=False):
 def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,outputDir=None,isCifti=False,fcMatFile='fcMats.mat',
              kind='correlation',overwrite=True,FCDir=None,mergeSessions=True,mergeRuns=False):
     if (not op.isfile(fcMatFile)) or overwrite:
-        if FCDir is None: # retrieve data from each subject's folder
-            measure = connectome.ConnectivityMeasure(
-            cov_estimator=LedoitWolf(assume_centered=False, block_size=1000, store_precision=False),
-            kind = kind,
-            vectorize=True, 
-            discard_diagonal=True)
-            if config.isCifti:
-                ext = '.dtseries.nii'
-            else:
-                ext = '.nii.gz'
- 
-            FC_sub = list()
-            ts_all = list()
-            for subject in subjectList:
-                config.subject = str(subject)
-                ts_sub = list()
-                if sessions:
-                    ts_ses = list()
-                    for config.session in sessions:
-                        ts_run = list()
-                        for config.fmriRun in runs:
+        measure = connectome.ConnectivityMeasure(
+        cov_estimator=LedoitWolf(assume_centered=False, block_size=1000, store_precision=False),
+        kind = kind,
+        vectorize=True, 
+        discard_diagonal=True)
+        if config.isCifti:
+            ext = '.dtseries.nii'
+        else:
+            ext = '.nii.gz'
+
+        FC_sub = list()
+        ts_all = list()
+        for subject in subjectList:
+            config.subject = str(subject)
+            ts_sub = list()
+            if sessions:
+                ts_ses = list()
+                for config.session in sessions:
+                    ts_run = list()
+                    for config.fmriRun in runs:
+                        if FCDir is None: # retrieve data from each subject's folder
                             # retrieve the name of the denoised fMRI file
                             if hasattr(config,'fmriFileTemplate'):
                                 inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
@@ -1530,20 +1530,29 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                                 rstring   = get_rcode(preproFile)
                                 tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
                                 ts        = np.genfromtxt(tsFile,delimiter="\t")
-                                # standardize
-                                ts -= ts.mean(axis=0)
-                                ts /= ts.std(axis=0)
-                                ts_sub.append(ts) 
-                                ts_run.append(ts)
-                        if len(ts_run)>0:
-                            ts_ses.append(np.concatenate(ts_run,axis=0))  
-                            print('ts_ses.append(np.concatenate(ts_run,axis=0))')
-                    if not mergeSessions and mergeRuns:
-                        FC_sub.append(measure.fit_transform(ts_ses)) 
-                        print('FC_sub.append(measure.fit_transform(ts_ses))') 
-                else:
-                    mergeSessions = False
-                    for config.fmriRun in runs:
+                            else:
+                                continue
+                        else: # retrieve data from FCDir
+                            tsFile = op.join(FCDir,config.subject+'_'+config.session+'_'+config.fmriRun+'_ts.txt')
+                            if op.isfile(tsFile):
+                                ts = np.genfromtxt(tsFile,delimiter=",")
+                            else:
+                                continue
+                        # standardize
+                        ts -= ts.mean(axis=0)
+                        ts /= ts.std(axis=0)
+                        ts_sub.append(ts) 
+                        ts_run.append(ts)
+                    if len(ts_run)>0:
+                        ts_ses.append(np.concatenate(ts_run,axis=0))  
+                        print('ts_ses.append(np.concatenate(ts_run,axis=0))')
+                if not mergeSessions and mergeRuns:
+                    FC_sub.append(measure.fit_transform(ts_ses)) 
+                    print('FC_sub.append(measure.fit_transform(ts_ses))') 
+            else:
+                mergeSessions = False
+                for config.fmriRun in runs:
+                    if FCDir is None: # retrieve data from each subject's folder
                         # retrieve the name of the denoised fMRI file
                         if hasattr(config,'fmriFileTemplate'):
                             inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
@@ -1560,23 +1569,29 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                             rstring   = get_rcode(preproFile)
                             tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
                             ts        = np.genfromtxt(tsFile,delimiter="\t")
-                            # standardize
-                            ts -= ts.mean(axis=0)
-                            ts /= ts.std(axis=0)
-                            ts_sub.append(ts)
-                if len(ts_sub)>0:
-                    ts_all.append(np.concatenate(ts_sub, axis=0))
-                if not mergeSessions and not mergeRuns:
-                   FC_sub.append(measure.fit_transform(ts_sub))
-                   print('FC_sub.append(measure.fit_transform(ts_sub))')
-        #else: # retrieve data from FCDir folder
+                        else:
+                            continue
+                    else:
+                        tsFile = op.join(FCDir,config.subject+'_'+config.fmriRun+'_ts.txt')
+                        if op.isfile(tsFile):
+                            ts = np.genfromtxt(tsFile,delimiter=",")
+                        else:
+                            continue
+                    # standardize
+                    ts -= ts.mean(axis=0)
+                    ts /= ts.std(axis=0)
+                    ts_sub.append(ts)
+            if len(ts_sub)>0:
+                ts_all.append(np.concatenate(ts_sub, axis=0))
+            if not mergeSessions and not mergeRuns:
+               FC_sub.append(measure.fit_transform(ts_sub))
+               print('FC_sub.append(measure.fit_transform(ts_sub))')
 
         # compute connectivity matrix
         if mergeSessions or (sessions is None and mergeRuns): 
             fcMats = measure.fit_transform(ts_all)
         else: 
             fcMats = np.vstack([np.mean(el,axis=0) for el in FC_sub])
-        print(fcMats.shape)
         # SAVE fcMats
         results      = {}
         results['fcMats'] = fcMats
