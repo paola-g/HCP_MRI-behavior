@@ -272,7 +272,7 @@ config.operationDict = {
 #  
 def filter_regressors(regressors, filtering, nTRs, TR):
     if len(filtering)==0:
-        print('Error! Missing or wrong filtering flavor. Regressors were not filtered.')
+        print('Warning! Missing or wrong filtering flavor. Regressors were not filtered.')
     else:
         if filtering[0] == 'Butter':
             regressors = clean(regressors, detrend=False, standardize=False, 
@@ -1294,7 +1294,6 @@ def computeFD(lowpass=None):
 #  
 def makeGrayPlot(displayPlot=False,overwrite=False):
     savePlotFile = config.fmriFile_dn.replace(config.ext,'_grayplot.png')
-    print(savePlotFile)
     if not op.isfile(savePlotFile) or overwrite:
         # FD
         t = time()
@@ -1390,7 +1389,6 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
 #  @brief Apply parcellation (output saved to file)
 #  
 def parcellate(overwrite=False):
-    print("entering parcellate (overwrite={})".format(overwrite))
     # After preprocessing, functional connectivity is computed
     tsDir = op.join(outpath(),config.parcellationName)
     if not op.isdir(tsDir): mkdir(tsDir)
@@ -1436,7 +1434,6 @@ def parcellate(overwrite=False):
                 np.savetxt(tsFile,np.nanmean(data[np.where(allparcels==iParcel+1)[0],:],axis=0),fmt='%.16f',delimiter='\n')
 
         # concatenate all ts
-        print('Concatenating data')
         cmd = 'paste '+op.join(tsDir,'parcel???.txt')+' > '+alltsFile
         call(cmd, shell=True)
 
@@ -1467,7 +1464,6 @@ def parcellate(overwrite=False):
                     np.savetxt(tsFileAll,np.transpose(data[np.where(allparcels==iParcel+1)[0],:]),fmt='%.16f',delimiter=',',newline='\n')
         
         # concatenate all ts
-        print('Concatenating data')
         cmd = 'paste '+op.join(tsDir,'parcel???_{}.txt'.format(rstring))+' > '+alltsFile
         call(cmd, shell=True)
 
@@ -1545,10 +1541,8 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                         ts_run.append(ts)
                     if len(ts_run)>0:
                         ts_ses.append(np.concatenate(ts_run,axis=0))  
-                        print('ts_ses.append(np.concatenate(ts_run,axis=0))')
                 if not mergeSessions and mergeRuns:
                     FC_sub.append(measure.fit_transform(ts_ses)) 
-                    print('FC_sub.append(measure.fit_transform(ts_ses))') 
             else:
                 mergeSessions = False
                 for config.fmriRun in runs:
@@ -1585,7 +1579,6 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                 ts_all.append(np.concatenate(ts_sub, axis=0))
             if not mergeSessions and not mergeRuns:
                FC_sub.append(measure.fit_transform(ts_sub))
-               print('FC_sub.append(measure.fit_transform(ts_sub))')
 
         # compute connectivity matrix
         if mergeSessions or (sessions is None and mergeRuns): 
@@ -1612,7 +1605,6 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
 #  @param [bool] overwrite True if existing files should be overwritten
 #  
 def computeFC(overwrite=False):
-    print("entering computeFC (overwrite={})".format(overwrite))
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
     FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
@@ -1663,7 +1655,6 @@ def computeFC(overwrite=False):
 #  @return [tuple] functional connectivity matrix before and after denoising
 #     
 def plotFC(displayPlot=False,overwrite=False):
-    print("entering plotFC (overwrite={})".format(overwrite))
     savePlotFile=config.fmriFile_dn.replace(config.ext,'_'+config.parcellationName+'_fcMat.png')
 
     if not op.isfile(savePlotFile) or overwrite:
@@ -1800,7 +1791,6 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             if conMat is None:
                 conMat = np.array(np.ravel(conVec))
             else:
-                print(confound,conMat.shape,conVec.shape)
                 conMat = np.vstack((conMat,conVec))
         # if only one confound, transform to matrix
         if len(confounds)==1:
@@ -1817,7 +1807,6 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
         regr.fit(conMat[train_index,:], score[train_index])
         fittedvalues = regr.predict(conMat)
         score        = score - np.ravel(fittedvalues)
-        print(score.shape)
 
         corrAft = []
         for i in range(len(confounds)):
@@ -1845,7 +1834,6 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
 
         outFile = op.join(outDir,'{:04d}'.format(thisPerm),'{}.mat'.format(
             '_'.join(['%s' % test_sub for test_sub in df['Subject'][test_index]])))
-        print(outFile)
 
         if op.isfile(outFile) and not config.overwrite:
             continue
@@ -1859,7 +1847,6 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
         idx_filtered_neg = np.array([idx for idx in range(0,n_edges) if pears[idx][1]<filterThr and pears[idx][0]<0])
             
         if model=='Finn':
-            print(model)
             lr  = linear_model.LinearRegression()
             # select edges (positively and negatively) correlated with score with threshold filterThr
             filtered_pos = edges[np.ix_(train_index,idx_filtered_pos)]
@@ -1886,7 +1873,6 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             sio.savemat(outFile,results)
         
         elif model=='elnet':
-            print(model)
             X_train, X_test, y_train, y_test = edges[np.ix_(train_index,idx_filtered)], edges[np.ix_(test_index,idx_filtered)], score[train_index], score[test_index]
             rbX            = RobustScaler()
             X_train        = rbX.fit_transform(X_train)
