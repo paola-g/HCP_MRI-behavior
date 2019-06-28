@@ -21,9 +21,9 @@ class config(object):
     useNative          = False
     parcellationName   = ''
     parcellationFile   = ''
-    outDir             = ''
+    FCDir              = 'FC'
     headradius         = 50 #50mm as in Powers et al. 2012
-#    melodicFolder      =  op.join('#fMRIrun#_hp2000.ica','filtered_func_data.ica') #the code #fMRIrun# will be replaced
+    melodicFolder      =  op.join('#fMRIrun#_hp2000.ica','filtered_func_data.ica') #the code #fMRIrun# will be replaced
 
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
@@ -80,8 +80,7 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    #return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
-    return op.join(config.DATADIR)
+    return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
 
 
 #----------------------------------
@@ -1769,50 +1768,6 @@ def parcellate(overwrite=False):
         cmd = 'paste '+op.join(tsDir,'parcel???_{}.txt'.format(rstring))+' > '+alltsFile
         call(cmd, shell=True)
 
-def getAllFC(subjectList, runs, parcellation, fcMatFile='fcMats.mat', kind='correlation',overwrite=True):
-    if (not op.isfile(fcMatFile)) or overwrite:
-        measure     = connectome.ConnectivityMeasure(
-        cov_estimator=LedoitWolf(assume_centered=False, block_size=1000, store_precision=False),
-        kind = kind,
-        vectorize=True, 
-        discard_diagonal=True)
-
-        iSub= 0
-        ts_all = list()
-        for subject in subjectList:
-            config.subject = str(subject)
-            iRun = 0
-            for config.fmriRun in runs:
-                # retrieve the name of the denoised fMRI file
-                runPipelinePar(launchSubproc=False)
-                # retrieve time courses of parcels
-                tsDir     = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
-                rstring   = get_rcode(config.fmriFile_dn)
-                tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
-                ts        = np.genfromtxt(tsFile,delimiter="\t")
-                # standardize
-                ts -= ts.mean(axis=0)
-                ts /= ts.std(axis=0)
-                if iRun==0:
-                    allts = ts
-                else:
-                    allts = np.concatenate((allts,ts),axis=0)
-                iRun = iRun + 1
-            ts_all.append(allts)
-            iSub = iSub + 1
-        # compute connectivity matrix
-        fcMats = measure.fit_transform(ts_all)
-        # SAVE fcMats
-        results      = {}
-        results['fcMats'] = fcMats
-        results['subjects'] = np.str(np.asarray(newdf['Subject']))
-        results['runs'] = np.array(runs)
-        results['sessions'] = np.array(sessions)
-        results['kind'] = kind
-        sio.savemat(fcMatFile, results)
-    else:
-        results = sio.loadmat(fcMatFile)
-        return results['fcMats']
 
 ## 
 #  @brief Get FC matrices for list of subjects
