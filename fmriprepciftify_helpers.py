@@ -1485,14 +1485,16 @@ def parcellate(overwrite=False):
 #  @param [bool] mergeRuns True if time series from different runs should be merged before computing FC, otherwise FC from each run are averaged (if mergeSessions is True mergeRuns is ignored and everything is concatenated)
 #  
 def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,outputDir=None,isCifti=False,fcMatFile='fcMats.mat',
-             kind='correlation',overwrite=True,FCDir=None,mergeSessions=True,mergeRuns=False):
+             kind='correlation',overwrite=True,FCDir=None,mergeSessions=True,mergeRuns=False,cov_estimator=None):
     if (not op.isfile(fcMatFile)) or overwrite:
+        if cov_estimator is None:
+            cov_estimator=LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
         measure = connectome.ConnectivityMeasure(
-        cov_estimator=LedoitWolf(assume_centered=False, block_size=1000, store_precision=False),
+        cov_estimator=cov_estimator,
         kind = kind,
         vectorize=True, 
         discard_diagonal=True)
-        if config.isCifti:
+        if isCifti:
             ext = '.dtseries.nii'
         else:
             ext = '.nii.gz'
@@ -1598,7 +1600,6 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
         results = sio.loadmat(fcMatFile)
         return results
  
-
 ## 
 #  @brief Compute functional connectivity matrix (output saved to file)
 #  

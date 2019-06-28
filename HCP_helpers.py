@@ -58,6 +58,8 @@ from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
 from sklearn.covariance import MinCovDet,GraphLassoCV
 from nilearn.signal import clean
+from nilearn import connectome
+from sklearn.covariance import MinCovDet,GraphLassoCV,LedoitWolf
 from past.utils import old_div
 import operator
 import gzip
@@ -1767,14 +1769,193 @@ def parcellate(overwrite=False):
         cmd = 'paste '+op.join(tsDir,'parcel???_{}.txt'.format(rstring))+' > '+alltsFile
         call(cmd, shell=True)
 
+def getAllFC(subjectList, runs, parcellation, fcMatFile='fcMats.mat', kind='correlation',overwrite=True):
+    if (not op.isfile(fcMatFile)) or overwrite:
+        measure     = connectome.ConnectivityMeasure(
+        cov_estimator=LedoitWolf(assume_centered=False, block_size=1000, store_precision=False),
+        kind = kind,
+        vectorize=True, 
+        discard_diagonal=True)
+
+        iSub= 0
+        ts_all = list()
+        for subject in subjectList:
+            config.subject = str(subject)
+            iRun = 0
+            for config.fmriRun in runs:
+                # retrieve the name of the denoised fMRI file
+                runPipelinePar(launchSubproc=False)
+                # retrieve time courses of parcels
+                tsDir     = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
+                rstring   = get_rcode(config.fmriFile_dn)
+                tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+                ts        = np.genfromtxt(tsFile,delimiter="\t")
+                # standardize
+                ts -= ts.mean(axis=0)
+                ts /= ts.std(axis=0)
+                if iRun==0:
+                    allts = ts
+                else:
+                    allts = np.concatenate((allts,ts),axis=0)
+                iRun = iRun + 1
+            ts_all.append(allts)
+            iSub = iSub + 1
+        # compute connectivity matrix
+        fcMats = measure.fit_transform(ts_all)
+        # SAVE fcMats
+        results      = {}
+        results['fcMats'] = fcMats
+        results['subjects'] = np.str(np.asarray(newdf['Subject']))
+        results['runs'] = np.array(runs)
+        results['sessions'] = np.array(sessions)
+        results['kind'] = kind
+        sio.savemat(fcMatFile, results)
+    else:
+        results = sio.loadmat(fcMatFile)
+        return results['fcMats']
+
+## 
+#  @brief Get FC matrices for list of subjects
+#  
+#  @param [array-like] subjectList list of subject IDs
+#  @param [array-like] runs list of runs 
+#  @param [array-like] sessions list of sessions (optional)
+#  @param [str] parcellation parcellation name - needed if FCDir is None      
+#  @param [list] operations pipeline operations - needed if FCDir is None
+#  @param [str] outputDir path to preprocessed data folder (optional, default is outpath())
+#  @param [bool] isCifti True if preprocessed data is in cifti format
+#  @param [str] fcMatFile full path to output file (default ./fcMats.mat)
+#  @param [str] kind type of FC, one of {“correlation”, “partial correlation”, “tangent”, “covariance”, “precision”}
+#  @param [bool] overwrite True if existing files should be overwritten
+#  @param [str] path to folder containing precomputed timeseries x parcels per subject - if None they are retrieved from each subject's folder
+#  @param [bool] mergeSessions True if time series from different sessions should be merged before computing FC, otherwise FC from each session are averaged
+#  @param [bool] mergeRuns True if time series from different runs should be merged before computing FC, otherwise FC from each run are averaged (if mergeSessions is True mergeRuns is ignored and everything is concatenated)
+#  
+def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,outputDir=None,isCifti=False,fcMatFile='fcMats.mat',
+             kind='correlation',overwrite=True,FCDir=None,mergeSessions=True,mergeRuns=False,cov_estimator=None):
+    if (not op.isfile(fcMatFile)) or overwrite:
+        if cov_estimator is None:
+            cov_estimator=LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
+        measure = connectome.ConnectivityMeasure(
+        cov_estimator=cov_estimator,
+        kind = kind,
+        vectorize=True, 
+        discard_diagonal=True)
+        if isCifti:
+            ext = '.dtseries.nii'
+        else:
+            ext = '.nii.gz'
+
+        FC_sub = list()
+        ts_all = list()
+        for subject in subjectList:
+            config.subject = str(subject)
+            ts_sub = list()
+            if sessions:
+                ts_ses = list()
+                for config.session in sessions:
+                    ts_run = list()
+                    for config.fmriRun in runs:
+                        if FCDir is None: # retrieve data from each subject's folder
+                            # retrieve the name of the denoised fMRI file
+                            if hasattr(config,'fmriFileTemplate'):
+                                inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
+                            else:
+                                prefix = config.session+'_'
+                                if isCifti:
+                                    inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+ext)
+                                else:
+                                    inputFile = op.join(buildpath(), prefix+config.fmriRun+ext)
+                            outputPath = outpath() if outputDir is None else outputDir
+                            preproFile = retrieve_preprocessed(inputFile, operations, outputPath, isCifti)
+                            if preproFile:
+                                # retrieve time courses of parcels
+                                prefix = config.session+'_'
+                                tsDir     = op.join(outputPath,parcellation,prefix+config.fmriRun+ext)
+                                rstring   = get_rcode(preproFile)
+                                tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+                                ts        = np.genfromtxt(tsFile,delimiter="\t")
+                            else:
+                                continue
+                        else: # retrieve data from FCDir
+                            tsFile = op.join(FCDir,config.subject+'_'+config.session+'_'+config.fmriRun+'_ts.txt')
+                            if op.isfile(tsFile):
+                                ts = np.genfromtxt(tsFile,delimiter=",")
+                            else:
+                                continue
+                        # standardize
+                        ts -= ts.mean(axis=0)
+                        ts /= ts.std(axis=0)
+                        ts_sub.append(ts) 
+                        ts_run.append(ts)
+                    if len(ts_run)>0:
+                        ts_ses.append(np.concatenate(ts_run,axis=0))  
+                if not mergeSessions and mergeRuns:
+                    FC_sub.append(measure.fit_transform(ts_ses)) 
+            else:
+                mergeSessions = False
+                for config.fmriRun in runs:
+                    if FCDir is None: # retrieve data from each subject's folder
+                        # retrieve the name of the denoised fMRI file
+                        if hasattr(config,'fmriFileTemplate'):
+                            inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
+                        else:
+                            if isCifti:
+                                inputFile = op.join(buildpath(), config.fmriRun+'_Atlas_'+config.smoothing+ext)
+                            else:
+                                inputFile = op.join(buildpath(), config.fmriRun+ext)
+                        outputPath = outpath() if (outputDir is None) else outputDir
+                        preproFile = retrieve_preprocessed(inputFile, operations, outputPath, isCifti)
+                        if preproFile:
+                            # retrieve time courses of parcels
+                            tsDir     = op.join(outpath(),config.parcellationName,config.fmriRun+ext)
+                            rstring   = get_rcode(preproFile)
+                            tsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+                            ts        = np.genfromtxt(tsFile,delimiter="\t")
+                        else:
+                            continue
+                    else:
+                        tsFile = op.join(FCDir,config.subject+'_'+config.fmriRun+'_ts.txt')
+                        if op.isfile(tsFile):
+                            ts = np.genfromtxt(tsFile,delimiter=",")
+                        else:
+                            continue
+                    # standardize
+                    ts -= ts.mean(axis=0)
+                    ts /= ts.std(axis=0)
+                    ts_sub.append(ts)
+            if len(ts_sub)>0:
+                ts_all.append(np.concatenate(ts_sub, axis=0))
+            if not mergeSessions and not mergeRuns:
+               FC_sub.append(measure.fit_transform(ts_sub))
+
+        # compute connectivity matrix
+        if mergeSessions or (sessions is None and mergeRuns): 
+            fcMats = measure.fit_transform(ts_all)
+        else: 
+            fcMats = np.vstack([np.mean(el,axis=0) for el in FC_sub])
+        # SAVE fcMats
+        results      = {}
+        results['fcMats'] = fcMats
+        results['subjects'] = subjectList
+        results['runs'] = np.array(runs)
+        if sessions: results['sessions'] = np.array(sessions)
+        results['kind'] = kind
+        sio.savemat(fcMatFile, results)
+        return results
+    else:
+        results = sio.loadmat(fcMatFile)
+        return results
 ## 
 #  @brief Compute functional connectivity matrix (output saved to file)
 #  
 #  @param [bool] overwrite True if existing files should be overwritten
 #  
 def computeFC(overwrite=False):
-    print("entering computeFC (overwrite={})".format(overwrite))
-    tsDir = op.join(buildpath(),config.parcellationName,config.fmriRun+config.ext)
+    prefix = config.session+'_' if  hasattr(config,'session')  else ''
+    FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
+    if FCDir and not op.isdir(FCDir): makedirs(FCDir)
+    tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     ###################
     # original
     ###################
@@ -1801,7 +1982,7 @@ def computeFC(overwrite=False):
         ts = np.loadtxt(alltsFile)
         # censor time points that need censoring
         if config.doScrubbing:
-            censored = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
+            censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
             censored = np.atleast_1d(censored)
             tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
             ts = ts[tokeep,:]
@@ -1810,7 +1991,10 @@ def computeFC(overwrite=False):
         # np.fill_diagonal(corrMat,1)
         # save as .txt
         np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
-		
+        if FCDir:
+            np.savetxt(op.join(FCDir,config.subject+'_'+prefix+config.fmriRun+'_ts.txt'),ts,fmt='%.6f',delimiter=',')
+	
+
 ## 
 #  @brief Compute functional connectivity matrices before and after preprocessing and generate FC plot
 #  
