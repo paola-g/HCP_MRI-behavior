@@ -122,49 +122,49 @@ def get_confounds():
 def get_EVs(path,task):
     EVs = {}
     if task == 'GAMBLING' : EVs = {
-        'win_event' : np.loadtxt(op.join(path,'EVs','win_event.txt')),
-        'loss_event' : np.loadtxt(op.join(path,'EVs','loss_event.txt')),
-        'neut_event' : np.loadtxt(op.join(path,'EVs','neut_event.txt')),
+        'win_event' : np.loadtxt(op.join(path,'EVs','win_event.txt'),ndmin=2),
+        'loss_event' : np.loadtxt(op.join(path,'EVs','loss_event.txt'),ndmin=2),
+        'neut_event' : np.loadtxt(op.join(path,'EVs','neut_event.txt'),ndmin=2),
     }
     if task == 'WM' : EVs = {
-        '0bk_body' : np.loadtxt(op.join(path,'EVs','0bk_body.txt')),
-        '0bk_faces' : np.loadtxt(op.join(path,'EVs','0bk_faces.txt')),
-        '0bk_places' : np.loadtxt(op.join(path,'EVs','0bk_places.txt')),
-        '0bk_tools' : np.loadtxt(op.join(path,'EVs','0bk_tools.txt')),
-        '2bk_body' : np.loadtxt(op.join(path,'EVs','2bk_body.txt')),
-        '2bk_faces' : np.loadtxt(op.join(path,'EVs','2bk_faces.txt')),
-        '2bk_places' : np.loadtxt(op.join(path,'EVs','2bk_places.txt')),
-        '2bk_tools' : np.loadtxt(op.join(path,'EVs','2bk_tools.txt')),
+        '0bk_body' : np.loadtxt(op.join(path,'EVs','0bk_body.txt'),ndmin=2),
+        '0bk_faces' : np.loadtxt(op.join(path,'EVs','0bk_faces.txt'),ndmin=2),
+        '0bk_places' : np.loadtxt(op.join(path,'EVs','0bk_places.txt'),ndmin=2),
+        '0bk_tools' : np.loadtxt(op.join(path,'EVs','0bk_tools.txt'),ndmin=2),
+        '2bk_body' : np.loadtxt(op.join(path,'EVs','2bk_body.txt'),ndmin=2),
+        '2bk_faces' : np.loadtxt(op.join(path,'EVs','2bk_faces.txt'),ndmin=2),
+        '2bk_places' : np.loadtxt(op.join(path,'EVs','2bk_places.txt'),ndmin=2),
+        '2bk_tools' : np.loadtxt(op.join(path,'EVs','2bk_tools.txt'),ndmin=2),
     }
     if task == 'MOTOR' : EVs = {
-        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt')),
-        'lf' : np.loadtxt(op.join(path,'EVs','lf.txt')),
-        'rf' : np.loadtxt(op.join(path,'EVs','rf.txt')),
-        'lh' : np.loadtxt(op.join(path,'EVs','lh.txt')),
-        'rh' : np.loadtxt(op.join(path,'EVs','rh.txt')),
-        't' : np.loadtxt(op.join(path,'EVs','t.txt')),
+        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt'),ndmin=2),
+        'lf' : np.loadtxt(op.join(path,'EVs','lf.txt'),ndmin=2),
+        'rf' : np.loadtxt(op.join(path,'EVs','rf.txt'),ndmin=2),
+        'lh' : np.loadtxt(op.join(path,'EVs','lh.txt'),ndmin=2),
+        'rh' : np.loadtxt(op.join(path,'EVs','rh.txt'),ndmin=2),
+        't' : np.loadtxt(op.join(path,'EVs','t.txt'),ndmin=2),
     }
     if task == 'LANGUAGE' : EVs = {
-        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt')),
-        'present_math' : np.loadtxt(op.join(path,'EVs','present_math.txt')),
-        'question_math' : np.loadtxt(op.join(path,'EVs','question_math.txt')),
-        'response_math' : np.loadtxt(op.join(path,'EVs','response_math.txt')),
-        'present_story' : np.loadtxt(op.join(path,'EVs','present_story.txt')),
-        'question_story' : np.loadtxt(op.join(path,'EVs','question_story.txt')),
-        'response_story' : np.loadtxt(op.join(path,'EVs','response_story.txt')),
+        'cue' : np.loadtxt(op.join(path,'EVs','cue.txt'),ndmin=2),
+        'present_math' : np.loadtxt(op.join(path,'EVs','present_math.txt'),ndmin=2),
+        'question_math' : np.loadtxt(op.join(path,'EVs','question_math.txt'),ndmin=2),
+        'response_math' : np.loadtxt(op.join(path,'EVs','response_math.txt'),ndmin=2),
+        'present_story' : np.loadtxt(op.join(path,'EVs','present_story.txt'),ndmin=2),
+        'question_story' : np.loadtxt(op.join(path,'EVs','question_story.txt'),ndmin=2),
+        'response_story' : np.loadtxt(op.join(path,'EVs','response_story.txt'),ndmin=2),
     }
     if task == 'SOCIAL' : EVs = {
-        'mental' : np.loadtxt(op.join(path,'EVs','mental.txt')),
-        'rnd' : np.loadtxt(op.join(path,'EVs','rnd.txt')),
+        'mental' : np.loadtxt(op.join(path,'EVs','mental.txt'),ndmin=2),
+        'rnd' : np.loadtxt(op.join(path,'EVs','rnd.txt'),ndmin=2),
     }
     if task == 'RELATIONAL' : EVs = {
-        'match' : np.loadtxt(op.join(path,'EVs','match.txt')),
-        'relation' : np.loadtxt(op.join(path,'EVs','relation.txt')),
-        'error' : np.loadtxt(op.join(path,'EVs','error.txt')), # might be empty
+        'match' : np.loadtxt(op.join(path,'EVs','match.txt'),ndmin=2),
+        'relation' : np.loadtxt(op.join(path,'EVs','relation.txt'),ndmin=2),
+        'error' : np.loadtxt(op.join(path,'EVs','error.txt'),ndmin=2), # might be empty
     }
     if task == 'EMOTION' : EVs = {
-        'fear' : np.loadtxt(op.join(path,'EVs','fear.txt')),
-        'neut' : np.loadtxt(op.join(path,'EVs','neut.txt')),
+        'fear' : np.loadtxt(op.join(path,'EVs','fear.txt'),ndmin=2),
+        'neut' : np.loadtxt(op.join(path,'EVs','neut.txt'),ndmin=2),
     }
     return EVs
 
@@ -1261,6 +1261,7 @@ def VoxelNormalization(niiImg, flavor, masks, imgInfo):
 
 # Struct used to associate functions to operation names
 Hooks={
+    'TaskRegression'         : TaskRegression,
     'MotionRegression'       : MotionRegression,
     'Scrubbing'              : Scrubbing,
     'TissueRegression'       : TissueRegression,
@@ -1737,7 +1738,7 @@ def defConVec(df,confound,session):
     elif confound == 'brainsize':
         conVec = df['FS_BrainSeg_Vol']
     elif confound == 'motion':
-        if session in ['REST1','REST2']:
+        if session in ['REST1','REST2','EMOTION','GAMBLING','LANGUAGE','MOTOR','RELATIONAL','SOCIAL','WM']:
             conVec = df['FDsum_'+session]
         elif session == 'REST12':
             conVec = .5*(df['FDsum_REST1'] + df['FDsum_REST2'])
@@ -1948,7 +1949,7 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         # print date and time stamp
         thispythonfn += 'print("=========================")\n'
         thispythonfn += 'print(strftime("%Y-%m-%d %H:%M:%S", localtime()))\n'
-        uhispythonfn += 'print("=========================")\n'
+        thispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
         thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
