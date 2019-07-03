@@ -1469,6 +1469,7 @@ def parcellate(overwrite=False):
         call(cmd, shell=True)
 
 ## 
+#  ## 
 #  @brief Get FC matrices for list of subjects
 #  
 #  @param [array-like] subjectList list of subject IDs
@@ -1479,12 +1480,12 @@ def parcellate(overwrite=False):
 #  @param [str] outputDir path to preprocessed data folder (optional, default is outpath())
 #  @param [bool] isCifti True if preprocessed data is in cifti format
 #  @param [str] fcMatFile full path to output file (default ./fcMats.mat)
-#  @param [str] kind type of FC, one of {“correlation”, “partial correlation”, “tangent”, “covariance”, “precision”}
+#  @param [str] kind type of FC, one of {"correlation" (default), "partial correlation", "tangent", "covariance", "precision"}
 #  @param [bool] overwrite True if existing files should be overwritten
-#  @param [str] path to folder containing precomputed timeseries x parcels per subject - if None they are retrieved from each subject's folder
+#  @param [str] FCDir path to folder containing precomputed timeseries x parcels per subject - if None they are retrieved from each subject's folder
 #  @param [bool] mergeSessions True if time series from different sessions should be merged before computing FC, otherwise FC from each session are averaged
 #  @param [bool] mergeRuns True if time series from different runs should be merged before computing FC, otherwise FC from each run are averaged (if mergeSessions is True mergeRuns is ignored and everything is concatenated)
-#  
+#  @param [CovarianceEstimator] cov_estimator is None, default sklearn.covariance.LedoitWolf estimator is used
 def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,outputDir=None,isCifti=False,fcMatFile='fcMats.mat',
              kind='correlation',overwrite=True,FCDir=None,mergeSessions=True,mergeRuns=False,cov_estimator=None):
     if (not op.isfile(fcMatFile)) or overwrite:
