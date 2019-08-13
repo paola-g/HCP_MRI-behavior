@@ -23,6 +23,7 @@ class config(object):
     outDir             = 'rsDenoise'
     FCDir              = 'FC'
     smoothing          = 's0' # ciftify format, used to read CIFTI files
+    wmparcFile         = 'hcp'
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -387,8 +388,10 @@ def makeTissueMasks(overwrite=False,precomputed=False):
     
     if not op.isfile(GMmaskFileout) or overwrite:
         # load wmparc.nii.gz
-        wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
-        #wmparcFilein = op.join(buildpath(), 'wmparc.nii.gz')
+        if config.wmparcFile == 'hcp':
+            wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
+        else:
+            wmparcFilein = config.wmparcFile.replace('#subjectID#', config.subject).replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
         # make sure it is resampled to the same space as the functional run
         wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
         # make identity matrix to feed to flirt for resampling
