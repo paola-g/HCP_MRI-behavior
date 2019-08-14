@@ -23,7 +23,7 @@ class config(object):
     outDir             = 'rsDenoise'
     FCDir              = 'FC'
     smoothing          = 's0' # ciftify format, used to read CIFTI files
-    wmparcFile         = 'hcp'
+    dirStructure       = 'ciftify' # or 'fmriprep'
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -388,58 +388,113 @@ def makeTissueMasks(overwrite=False,precomputed=False):
     
     if not op.isfile(GMmaskFileout) or overwrite:
         # load wmparc.nii.gz
-        if config.wmparcFile == 'hcp':
+        if (config.dirStructure).lower() == 'ciftify' :
             wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
-        else:
-            wmparcFilein = config.wmparcFile.replace('#subjectID#', config.subject).replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
-        # make sure it is resampled to the same space as the functional run
-        wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
-        # make identity matrix to feed to flirt for resampling
-        wmparcMat = op.join(outpath(), 'wmparc_flirt.mat')
-        eyeMat = op.join(outpath(), 'eye.mat')
-        with open(eyeMat,'w') as fid:
-            fid.write('1 0 0 0\n0 1 0 0\n0 0 1 0\n0 0 0 1')
+            # make sure it is resampled to the same space as the functional run
+            wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
+            # make identity matrix to feed to flirt for resampling
+            wmparcMat = op.join(outpath(), 'wmparc_flirt.mat')
+            eyeMat = op.join(outpath(), 'eye.mat')
+            with open(eyeMat,'w') as fid:
+                fid.write('1 0 0 0\n0 1 0 0\n0 0 1 0\n0 0 0 1')
 
-        
-        flirt_wmparc = fsl.FLIRT(in_file=wmparcFilein, out_file=wmparcFileout,
-                                reference=fmriFile, apply_xfm=True,
-                                in_matrix_file=eyeMat, out_matrix_file=wmparcMat, interp='nearestneighbour')
+            
+            flirt_wmparc = fsl.FLIRT(in_file=wmparcFilein, out_file=wmparcFileout,
+                                    reference=fmriFile, apply_xfm=True,
+                                    in_matrix_file=eyeMat, out_matrix_file=wmparcMat, interp='nearestneighbour')
 
-        flirt_wmparc.run()
+            flirt_wmparc.run()
+            
+            # load nii (ribbon & wmparc)
+            wmparc = np.asarray(nib.load(wmparcFileout).dataobj)
+            
+            # indices are from FreeSurferColorLUT.txt
+            
+            # Cerebellar-White-Matter-Left, Brain-Stem, Cerebellar-White-Matter-Right
+            wmparcWMstructures = [7, 16, 46, 5001, 5002]
+            # Cortical white matter (left and right)
+            wmparcWMstructures = np.concatenate([wmparcWMstructures, np.arange(3000,3036), np.arange(4000,4036)])
+            # Left-Cerebellar-Cortex, Right-Cerebellar-Cortex, Thalamus-Left, Caudate-Left
+            # Putamen-Left, Pallidum-Left, Hippocampus-Left, Amygdala-Left, Accumbens-Left 
+            # Diencephalon-Ventral-Left, Thalamus-Right, Caudate-Right, Putamen-Right
+            # Pallidum-Right, Hippocampus-Right, Amygdala-Right, Accumbens-Right
+            # Diencephalon-Ventral-Right
+            wmparcGMstructures = [8, 47, 10, 11, 12, 13, 17, 18, 26, 28, 49, 50, 51, 52, 53, 54, 58, 60]
+            # Cortical gray matter (left and write)
+            wmparcGMstructures = np.concatenate([wmparcGMstructures, np.arange(1000,1036), np.arange(2000,2036)])
+            # Fornix, CC-Posterior, CC-Mid-Posterior, CC-Central, CC-Mid-Anterior, CC-Anterior
+            wmparcCCstructures = [250, 251, 252, 253, 254, 255]
+            # Left-Lateral-Ventricle, Left-Inf-Lat-Vent, 3rd-Ventricle, 4th-Ventricle, CSF
+            # Left-Choroid-Plexus, Right-Lateral-Ventricle, Right-Inf-Lat-Vent, Right-Choroid-Plexus
+            wmparcCSFstructures = [4, 5, 14, 15, 24, 31, 43, 44, 63]
+            
+            # make masks
+            WMmask = np.double(np.logical_or(np.in1d(wmparc, wmparcCCstructures),np.in1d(wmparc, wmparcWMstructures)))
+            CSFmask = np.double(np.in1d(wmparc, wmparcCSFstructures))
+            GMmask = np.double(np.in1d(wmparc,wmparcGMstructures))
+            
+        else: # output of fmriprep
+            # /data2/jdubois2/data/YALE-trt/derivatives/fmriprep/sub-032401/ses-004TA/func/sub-032401_ses-004TA_task-rest_run-01_space-T1w_desc-aseg_dseg.nii.gz
+            prefix = config.session+'_' if  hasattr(config,'session')  else ''
+            wmparcFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session if  hasattr(config,'session')  else '', 'func',
+                config.subject+'_'+prefix+config.fmriRun+'_space-T1w_desc-aseg_dseg.nii.gz')
+            ribbonFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session if  hasattr(config,'session')  else '', 'func',
+                config.subject+'_'+prefix+config.fmriRun+'_space-T1w_desc-aparcaseg_dseg.nii.gz')
+            print('>>', wmparcFilein, ribbonFilein)
+            ribbonFileout = op.join(outpath(), 'ribbon.nii.gz')
+            wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
+            # make identity matrix to feed to flirt for resampling
+            ribbonMat = op.join(outpath(), 'ribbon_flirt.mat')
+            wmparcMat = op.join(outpath(), 'wmparc_flirt.mat')
+            eyeMat = op.join(outpath(), 'eye_{}.mat'.format(config.pipelineName))
+            with open(eyeMat,'w') as fid:
+                fid.write('1 0 0 0\n0 1 0 0\n0 0 1 0\n0 0 0 1')
+
+            
+            flirt_ribbon = fsl.FLIRT(in_file=ribbonFilein, out_file=ribbonFileout,
+                                    reference=fmriFile, apply_xfm=True,
+                                    in_matrix_file=eyeMat, out_matrix_file=ribbonMat, interp='nearestneighbour')
+            flirt_ribbon.run()
+
+            flirt_wmparc = fsl.FLIRT(in_file=wmparcFilein, out_file=wmparcFileout,
+                                    reference=fmriFile, apply_xfm=True,
+                                    in_matrix_file=eyeMat, out_matrix_file=wmparcMat, interp='nearestneighbour')
+
+            flirt_wmparc.run()
+            
+            # load nii (ribbon & wmparc)
+            ribbon = np.asarray(nib.load(ribbonFileout).dataobj)
+            wmparc = np.asarray(nib.load(wmparcFileout).dataobj)
         
-        # load nii (ribbon & wmparc)
-        wmparc = np.asarray(nib.load(wmparcFileout).dataobj)
+ 
+            # Left-Cerebral-White-Matter, Right-Cerebral-White-Matter
+            ribbonWMstructures = [2, 41]
+            # Left-Cerebral-Cortex, Right-Cerebral-Cortex
+            ribbonGMstrucures = np.concatenate([np.arange(1006,1036), np.arange(2000,2036)])
+            # Cerebellar-White-Matter-Left, Brain-Stem, Cerebellar-White-Matter-Right
+            wmparcWMstructures = [7, 16, 46]
+            # Left-Cerebellar-Cortex, Right-Cerebellar-Cortex, Thalamus-Left, Caudate-Left
+            # Putamen-Left, Pallidum-Left, Hippocampus-Left, Amygdala-Left, Accumbens-Left 
+            # Diencephalon-Ventral-Left, Thalamus-Right, Caudate-Right, Putamen-Right
+            # Pallidum-Right, Hippocampus-Right, Amygdala-Right, Accumbens-Right
+            # Diencephalon-Ventral-Right
+            wmparcGMstructures = [3, 42, 8, 47, 10, 11, 12, 13, 17, 18, 26, 28, 49, 50, 51, 52, 53, 54, 58, 60]
+            # Fornix, CC-Posterior, CC-Mid-Posterior, CC-Central, CC-Mid-Anterior, CC-Anterior
+            wmparcCCstructures = [250, 251, 252, 253, 254, 255]
+            # Left-Lateral-Ventricle, Left-Inf-Lat-Vent, 3rd-Ventricle, 4th-Ventricle, CSF
+            # Left-Choroid-Plexus, Right-Lateral-Ventricle, Right-Inf-Lat-Vent, Right-Choroid-Plexus
+            wmparcCSFstructures = [4, 5, 14, 15, 24, 31, 43, 44, 63]
+            
+            # make masks
+            WMmask = np.double(np.logical_and(np.logical_and(np.logical_or(np.logical_or(np.in1d(ribbon, ribbonWMstructures),
+                                                                                  np.in1d(wmparc, wmparcWMstructures)),
+                                                                    np.in1d(wmparc, wmparcCCstructures)),
+                                                      np.logical_not(np.in1d(wmparc, wmparcCSFstructures))),
+                                       np.logical_not(np.in1d(wmparc, wmparcGMstructures))))
+            CSFmask = np.double(np.in1d(wmparc, wmparcCSFstructures))
+            GMmask = np.double(np.logical_or(np.in1d(ribbon,ribbonGMstrucures),np.in1d(wmparc,wmparcGMstructures)))
         
-        # indices are from FreeSurferColorLUT.txt
-        
-        # Cerebellar-White-Matter-Left, Brain-Stem, Cerebellar-White-Matter-Right
-        wmparcWMstructures = [7, 16, 46, 5001, 5002]
-        # Cortical white matter (left and right)
-        wmparcWMstructures = np.concatenate([wmparcWMstructures, np.arange(3000,3036), np.arange(4000,4036)])
-        # Left-Cerebellar-Cortex, Right-Cerebellar-Cortex, Thalamus-Left, Caudate-Left
-        # Putamen-Left, Pallidum-Left, Hippocampus-Left, Amygdala-Left, Accumbens-Left 
-        # Diencephalon-Ventral-Left, Thalamus-Right, Caudate-Right, Putamen-Right
-        # Pallidum-Right, Hippocampus-Right, Amygdala-Right, Accumbens-Right
-        # Diencephalon-Ventral-Right
-        wmparcGMstructures = [8, 47, 10, 11, 12, 13, 17, 18, 26, 28, 49, 50, 51, 52, 53, 54, 58, 60]
-        # Cortical gray matter (left and write)
-        wmparcGMstructures = np.concatenate([wmparcGMstructures, np.arange(1000,1036), np.arange(2000,2036)])
-        # Fornix, CC-Posterior, CC-Mid-Posterior, CC-Central, CC-Mid-Anterior, CC-Anterior
-        wmparcCCstructures = [250, 251, 252, 253, 254, 255]
-        # Left-Lateral-Ventricle, Left-Inf-Lat-Vent, 3rd-Ventricle, 4th-Ventricle, CSF
-        # Left-Choroid-Plexus, Right-Lateral-Ventricle, Right-Inf-Lat-Vent, Right-Choroid-Plexus
-        wmparcCSFstructures = [4, 5, 14, 15, 24, 31, 43, 44, 63]
-        
-        # make masks
-        #WMmask = np.double(np.logical_and(np.logical_and(np.logical_or(np.in1d(wmparc, wmparcWMstructures),
-        #                                                        np.in1d(wmparc, wmparcCCstructures)),
-        #                                          np.logical_not(np.in1d(wmparc, wmparcCSFstructures))),
-        #                           np.logical_not(np.in1d(wmparc, wmparcGMstructures))))
-        #WMmask = np.in1d(wmparc, wmparcWMstructures)
-        WMmask = np.double(np.logical_or(np.in1d(wmparc, wmparcCCstructures),np.in1d(wmparc, wmparcWMstructures)))
-        CSFmask = np.double(np.in1d(wmparc, wmparcCSFstructures))
-        GMmask = np.double(np.in1d(wmparc,wmparcGMstructures))
-        
+
         # write masks
         ref = nib.load(wmparcFileout)
         img = nib.Nifti1Image(WMmask.reshape(ref.shape).astype('<f4'), ref.affine)
@@ -688,7 +743,7 @@ def checkXML(inFile, operations, params, resDir, isCifti=False, useMostRecent=Tr
                 rcode = xfile.replace('.xml','')
                 prefix = config.session+'_' if  hasattr(config,'session')  else ''
                 
-                return op.join(resDir,prefix+config.fmriRun+'_prepro_'+rcode+ext)
+                return op.join(resDir,config.subject+'_'+prefix+config.fmriRun+'_prepro_'+rcode+ext)
     return None
 	
 ## 
@@ -1153,6 +1208,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = (x - (np.max(x)/2)) **(i)
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:])        
+            print(y)
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
         return y[1:nPoly,:].T    
@@ -1517,7 +1573,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                         if FCDir is None: # retrieve data from each subject's folder
                             # retrieve the name of the denoised fMRI file
                             if hasattr(config,'fmriFileTemplate'):
-                                inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
+                                inputFile = op.join(config.DATADIR, config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session).replace('#subjectID#', config.subject))
                             else:
                                 prefix = config.session+'_'
                                 if isCifti:
@@ -1556,7 +1612,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                     if FCDir is None: # retrieve data from each subject's folder
                         # retrieve the name of the denoised fMRI file
                         if hasattr(config,'fmriFileTemplate'):
-                            inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
+                            inputFile = op.join(config.DATADIR, config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session).replace('#subjectID#', config.subject))
                         else:
                             if isCifti:
                                 inputFile = op.join(buildpath(), config.fmriRun+'_Atlas_'+config.smoothing+ext)
@@ -2015,7 +2071,7 @@ def runPipeline():
     
     timeStart = localtime()
     print('Step 0 : Building WM, CSF and GM masks...')
-    masks = makeTissueMasks(overwrite=False)
+    masks = makeTissueMasks(overwrite=config.overwrite)
     maskAll, maskWM_, maskCSF_, maskGM_ = masks    
 
     if config.isCifti:
@@ -2077,7 +2133,7 @@ def runPipeline():
     rstring = ''.join(random.SystemRandom().choice(string.ascii_lowercase +string.ascii_uppercase + string.digits) for _ in range(8))
     outDir  = outpath()
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
-    outFile = prefix+config.fmriRun+'_prepro_'+rstring
+    outFile = config.subject+'_'+prefix+config.fmriRun+'_prepro_'+rstring
     if config.isCifti:
         # write to text file
         np.savetxt(op.join(outDir,outFile+'.tsv'),data, delimiter='\t', fmt='%.6f')
@@ -2108,7 +2164,7 @@ def runPipeline():
 #  @param [bool] overwriteFC True if existing FC matrix files should be overwritten 
 #  @param [bool] cleanup True if old files should be removed
 #  
-def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
+def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGrayPlot=False,do_plotFC=False):
     if config.queue: 
         priority=-100
     if config.isCifti:
@@ -2116,11 +2172,8 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
     else:
         config.ext = '.nii.gz'
 
-#    if config.overwrite:
-#        overwriteFC = True
-
     if hasattr(config,'fmriFileTemplate'):
-        config.fmriFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
+        config.fmriFile = op.join(config.DATADIR, config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session).replace('#subjectID#', config.subject))
     else:
         prefix = config.session+'_' if  hasattr(config,'session')  else ''
         if config.isCifti:
@@ -2171,15 +2224,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
     precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath(),config.isCifti) 
 
     if precomputed and not config.overwrite:
-        do_makeGrayPlot    = False
-        do_plotFC          = False
         config.fmriFile_dn = precomputed
-        if not op.isfile(config.fmriFile_dn.replace(config.ext,'_grayplot.png')):
-            do_makeGrayPlot = True
-        if not op.isfile(config.fmriFile_dn.replace(config.ext,'_'+config.parcellationName+'_fcMat.png')):
-            do_plotFC = True
-        if overwriteFC:
-            do_plotFC = True
         if (not do_plotFC) and (not do_makeGrayPlot):
             return True
     else:
@@ -2194,8 +2239,6 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                 remove(op.join(outpath(),get_rcode(precomputed)+'.xml'))
             except OSError:
                 pass
-        do_makeGrayPlot = True
-        do_plotFC       = True
 
     if config.queue or launchSubproc:
         jobDir = op.join(config.outDir,'jobs')
