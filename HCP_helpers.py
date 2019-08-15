@@ -1,5 +1,6 @@
 from __future__ import division
 
+import os.path as op
 #----------------------------------
 # initialize global variable config
 #----------------------------------
@@ -41,7 +42,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import pandas as pd
-import os.path as op
 from os import mkdir, makedirs, getcwd, remove, listdir, environ
 import sys
 import numpy as np
@@ -81,7 +81,8 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
+    #return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
+    return config.DATADIR
 #----------------------------------
 # function to build dinamycally output path (BIDS-like) 
 #----------------------------------
