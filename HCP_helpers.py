@@ -1,5 +1,3 @@
-from __future__ import division
-
 import os.path as op
 #----------------------------------
 # initialize global variable config
@@ -1457,7 +1455,6 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
 def Detrending(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
     nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
-    nPoly = flavor[1] + 1
     
     if config.isCifti:
         volData = niiImg[1]
@@ -1470,14 +1467,14 @@ def Detrending(niiImg, flavor, masks, imgInfo):
             y = legendre_poly(flavor[1],nTRs)                
         elif flavor[0] == 'poly':       
             x = np.arange(nTRs)            
-            y = np.ones((nPoly,len(x)))
-            for i in range(nPoly):
-                y[i,:] = (x - (np.max(x)/2)) **(i)
+            y = np.ones((flavor[1],len(x)))
+            for i in range(flavor[1]):
+                y[i,:] = (x - (np.max(x)/2)) **(i+1)
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:]) 
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
-        niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
+        niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y.T, config.preWhitening)
         volData[np.logical_or(maskWM_,maskCSF_),:] = niiImgWMCSF
     elif flavor[2] == 'GM':
         if config.isCifti:
@@ -1488,12 +1485,12 @@ def Detrending(niiImg, flavor, masks, imgInfo):
             y = legendre_poly(flavor[1], nTRs)
         elif flavor[0] == 'poly':       
             x = np.arange(nTRs)
-            y = np.ones((nPoly,len(x)))
-            for i in range(nPoly):
-                y[i,:] = (x - (np.max(x)/2)) **(i)
+            y = np.ones((flavor[1],len(x)))
+            for i in range(flavor[1]):
+                y[i,:] = (x - (np.max(x)/2)) **(i+1)
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:])
-        niiImgGM = regress(niiImgGM, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
+        niiImgGM = regress(niiImgGM, nTRs, TR, y.T, config.preWhitening)
         if config.isCifti:
             niiImg[0] = niiImgGM
         else:
@@ -1503,14 +1500,14 @@ def Detrending(niiImg, flavor, masks, imgInfo):
             y = legendre_poly(flavor[1], nTRs)
         elif flavor[0] == 'poly':       
             x = np.arange(nTRs)
-            y = np.ones((nPoly,len(x)))
-            for i in range(nPoly):
-                y[i,:] = (x - (np.max(x)/2)) **(i)
+            y = np.ones((flavor[1],len(x)))
+            for i in range(flavor[1]):
+                y[i,:] = (x - (np.max(x)/2)) **(i+1)
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:])        
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
-        return y[1:nPoly,:].T    
+        return y.T    
     else:
         print('Warning! Wrong detrend mask. Nothing was done' )
 
