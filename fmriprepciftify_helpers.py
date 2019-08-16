@@ -1,4 +1,4 @@
-from __future__ import division
+#from __future__ import division
 
 #----------------------------------
 # initialize global variable config
@@ -23,7 +23,7 @@ class config(object):
     outDir             = 'rsDenoise'
     FCDir              = 'FC'
     smoothing          = 's0' # ciftify format, used to read CIFTI files
-    dirStructure       = 'ciftify' # or 'fmriprep'
+    preprocessing      = 'ciftify' # or 'fmriprep' or 'freesurfer'
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -57,7 +57,7 @@ from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
 from sklearn.covariance import MinCovDet,GraphLassoCV
 from nilearn.signal import clean
-from nilearn import connectome
+from nilearn import connectome, image
 from sklearn.covariance import MinCovDet,GraphLassoCV,LedoitWolf
 import operator
 import gzip
@@ -302,7 +302,7 @@ def regress(data, nTRs, TR, regressors, preWhitening=False):
     X  = np.concatenate((np.ones([nTRs,1]), regressors), axis=1)
     N = data.shape[0]
     start_time = time()
-    fit = np.linalg.lstsq(X, data.T)[0]
+    fit = np.linalg.lstsq(X, data.T, rcond=None)[0]
     fittedvalues = np.dot(X, fit)
     resid = data - fittedvalues.T
     data = resid
@@ -380,15 +380,15 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  
 #  @return [tuple] whole brain, white matter, cerebrospinal fluid and gray matter masks
 #  
-def makeTissueMasks(overwrite=False,precomputed=False):
+def makeTissueMasks(overwrite=False,precomputed=False, maskThreshold=0.33):
     fmriFile = config.fmriFile
     WMmaskFileout = op.join(outpath(),'WMmask.nii')
     CSFmaskFileout = op.join(outpath(), 'CSFmask.nii')
     GMmaskFileout = op.join(outpath(), 'GMmask.nii')
     
     if not op.isfile(GMmaskFileout) or overwrite:
-        # load wmparc.nii.gz
-        if (config.dirStructure).lower() == 'ciftify' :
+        if (config.preprocessing).lower() == 'ciftify' :
+            # load wmparc.nii.gz
             wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
             # make sure it is resampled to the same space as the functional run
             wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
@@ -405,7 +405,7 @@ def makeTissueMasks(overwrite=False,precomputed=False):
 
             flirt_wmparc.run()
             
-            # load nii (ribbon & wmparc)
+            # load nii 
             wmparc = np.asarray(nib.load(wmparcFileout).dataobj)
             
             # indices are from FreeSurferColorLUT.txt
@@ -433,14 +433,27 @@ def makeTissueMasks(overwrite=False,precomputed=False):
             CSFmask = np.double(np.in1d(wmparc, wmparcCSFstructures))
             GMmask = np.double(np.in1d(wmparc,wmparcGMstructures))
             
-        else: # output of fmriprep
-            # /data2/jdubois2/data/YALE-trt/derivatives/fmriprep/sub-032401/ses-004TA/func/sub-032401_ses-004TA_task-rest_run-01_space-T1w_desc-aseg_dseg.nii.gz
+            # write masks
+            ref = nib.load(wmparcFileout)
+            img = nib.Nifti1Image(WMmask.reshape(ref.shape).astype('<f4'), ref.affine)
+            nib.save(img, WMmaskFileout)
+            
+            img = nib.Nifti1Image(CSFmask.reshape(ref.shape).astype('<f4'), ref.affine)
+            nib.save(img, CSFmaskFileout)
+            
+            img = nib.Nifti1Image(GMmask.reshape(ref.shape).astype('<f4'), ref.affine)
+            nib.save(img, GMmaskFileout)
+            
+            # delete temporary files
+            cmd = 'rm {} {}'.format(eyeMat, wmparcMat)
+            call(cmd,shell=True)
+
+        elif config.preprocessing == 'freesurfer': # output of fmriprepa + freesurfer
             prefix = config.session+'_' if  hasattr(config,'session')  else ''
             wmparcFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session if  hasattr(config,'session')  else '', 'func',
                 config.subject+'_'+prefix+config.fmriRun+'_space-T1w_desc-aseg_dseg.nii.gz')
             ribbonFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session if  hasattr(config,'session')  else '', 'func',
                 config.subject+'_'+prefix+config.fmriRun+'_space-T1w_desc-aparcaseg_dseg.nii.gz')
-            print('>>', wmparcFilein, ribbonFilein)
             ribbonFileout = op.join(outpath(), 'ribbon.nii.gz')
             wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
             # make identity matrix to feed to flirt for resampling
@@ -493,23 +506,59 @@ def makeTissueMasks(overwrite=False,precomputed=False):
                                        np.logical_not(np.in1d(wmparc, wmparcGMstructures))))
             CSFmask = np.double(np.in1d(wmparc, wmparcCSFstructures))
             GMmask = np.double(np.logical_or(np.in1d(ribbon,ribbonGMstrucures),np.in1d(wmparc,wmparcGMstructures)))
-        
 
-        # write masks
-        ref = nib.load(wmparcFileout)
-        img = nib.Nifti1Image(WMmask.reshape(ref.shape).astype('<f4'), ref.affine)
-        nib.save(img, WMmaskFileout)
-        
-        img = nib.Nifti1Image(CSFmask.reshape(ref.shape).astype('<f4'), ref.affine)
-        nib.save(img, CSFmaskFileout)
-        
-        img = nib.Nifti1Image(GMmask.reshape(ref.shape).astype('<f4'), ref.affine)
-        nib.save(img, GMmaskFileout)
-        
-        # delete temporary files
-        cmd = 'rm {} {}'.format(eyeMat, wmparcMat)
-        call(cmd,shell=True)
-        
+            # write masks
+            ref = nib.load(wmparcFileout)
+            img = nib.Nifti1Image(WMmask.reshape(ref.shape).astype('<f4'), ref.affine)
+            nib.save(img, WMmaskFileout)
+            
+            img = nib.Nifti1Image(CSFmask.reshape(ref.shape).astype('<f4'), ref.affine)
+            nib.save(img, CSFmaskFileout)
+            
+            img = nib.Nifti1Image(GMmask.reshape(ref.shape).astype('<f4'), ref.affine)
+            nib.save(img, GMmaskFileout)
+            
+            # delete temporary files
+            cmd = 'rm {} {}'.format(eyeMat, wmparcMat)
+            call(cmd,shell=True)
+
+        else: # only fmriprep
+            wmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-WM_probseg.nii.gz')
+            gmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-GM_probseg.nii.gz')
+            csfFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-CSF_probseg.nii.gz')
+
+            # load nii 
+            ref = nib.load(wmFilein)
+ 
+            WMnii = np.asarray(nib.load(wmFilein).dataobj)
+            GMnii = np.asarray(nib.load(gmFilein).dataobj)
+            CSFnii = np.asarray(nib.load(csfFilein).dataobj)
+            WMnii = np.double(WMnii > maskThreshold)
+            GMnii = np.double(GMnii > maskThreshold)
+            CSFnii = np.double(CSFnii > maskThreshold)
+            WMnii = nib.Nifti1Image(WMnii.reshape(ref.shape).astype('<f4'), ref.affine)
+            GMnii = nib.Nifti1Image(GMnii.reshape(ref.shape).astype('<f4'), ref.affine)
+            CSFnii = nib.Nifti1Image(CSFnii.reshape(ref.shape).astype('<f4'), ref.affine)
+            
+            ref = nib.load(fmriFile)
+            WMmask = image.resample_to_img(WMnii, ref, interpolation='nearest')
+            GMmask = image.resample_to_img(GMnii, ref, interpolation='nearest')
+            CSFmask = image.resample_to_img(CSFnii, ref, interpolation='nearest')
+
+            WMmask = np.asarray(WMmask.dataobj)
+            GMmask = np.asarray(GMmask.dataobj)
+            CSFmask = np.asarray(CSFmask.dataobj)
+
+            # write masks
+            img = nib.Nifti1Image(WMmask.reshape(ref.shape[:3]).astype('<f4'), ref.affine)
+            nib.save(img, WMmaskFileout)
+            
+            img = nib.Nifti1Image(CSFmask.reshape(ref.shape[:3]).astype('<f4'), ref.affine)
+            nib.save(img, CSFmaskFileout)
+            
+            img = nib.Nifti1Image(GMmask.reshape(ref.shape[:3]).astype('<f4'), ref.affine)
+            nib.save(img, GMmaskFileout)
+            
         
     tmpWM = nib.load(WMmaskFileout)
     nRows, nCols, nSlices = tmpWM.header.get_data_shape()
@@ -976,20 +1025,25 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     if flavor[0] == 'FD':
         data = get_confounds()
         score = np.array(data['framewise_displacement']).astype(float)
+        score[np.isnan(score)] = 0
         censored = np.where(score>thr)
     elif flavor[0] == 'FDclean':
         data = get_confounds()
         score = np.array(data['framewise_displacement']).astype(float)
+        score[np.isnan(score)] = 0
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         censored = np.where(cleanFD>thr)
     elif flavor[0] == 'DVARS':
         data = get_confounds()
         score = np.array(data['dvars']).astype(float)
+        score[np.isnan(score)] = 0
         censored = score > (100+thr)/100* np.median(score)
     elif flavor[0] == 'FD+DVARS': # as in Siegel et al. 2016
         data = get_confounds()
         score = np.array(data['framewise_displacement']).astype(float)
+        score[np.isnan(score)] = 0
         scoreDVARS = np.array(data['dvars']).astype(float)
+        scoreDVARS[np.isnan(scoreDVARS)] = 0
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         thr2 = flavor[2]
         censDVARS = scoreDVARS > (100+thr2)/100* np.median(scoreDVARS)
@@ -1026,6 +1080,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
                             nvox += 1
             rmsdiff[i] = np.sqrt(sumdistsq/nvox)
         score = rmsdiff
+        score[np.isnan(score)] = 0
         censored = np.where(score>thr)
         np.savetxt(op.join(outpath(), '{}.txt'.format(flavor[0])), score, delimiter='\n', fmt='%d')
     else:
@@ -1157,7 +1212,7 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
 def Detrending(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
     nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
-    nPoly = flavor[1] + 1
+    nPoly = flavor[1]
     
     if config.isCifti:
         volData = niiImg[1]
@@ -1172,7 +1227,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
             x = np.arange(nTRs)            
             y = np.ones((nPoly,len(x)))
             for i in range(nPoly):
-                y[i,:] = (x - (np.max(x)/2)) **(i)
+                y[i,:] = (x - (np.max(x)/2)) **(i+1)
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:]) 
         else:
@@ -1190,7 +1245,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
             x = np.arange(nTRs)
             y = np.ones((nPoly,len(x)))
             for i in range(nPoly):
-                y[i,:] = (x - (np.max(x)/2)) **(i)
+                y[i,:] = (x - (np.max(x)/2)) **(i+1)
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:])
         niiImgGM = regress(niiImgGM, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
@@ -1205,10 +1260,9 @@ def Detrending(niiImg, flavor, masks, imgInfo):
             x = np.arange(nTRs)
             y = np.ones((nPoly,len(x)))
             for i in range(nPoly):
-                y[i,:] = (x - (np.max(x)/2)) **(i)
+                y[i,:] = (x - (np.max(x)/2)) **(i+1)
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:])        
-            print(y)
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
         return y[1:nPoly,:].T    
