@@ -24,6 +24,7 @@ class config(object):
     FCDir              = 'FC'
     smoothing          = 's0' # ciftify format, used to read CIFTI files
     preprocessing      = 'ciftify' # or 'fmriprep' or 'freesurfer'
+    interpolation      = 'linear'
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -174,6 +175,15 @@ def get_EVs(path,task):
 # many more can be implemented
 #----------------------------------
 config.operationDict = {
+    'Kong': [ #Kong  et al. 2018
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 1, 'wholebrain']],
+        ['TissueRegression',        3, ['WMCSF+dt', 'wholebrain']],
+        ['MotionRegression',        3, ['R dR']],
+        ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]]
+        ['GlobalSignalRegression',  3, ['GS+dt']]
+        ['Scrubbing',               5, ['FD-DVARS', 0.2, 50]], 
+        ],
     'Task': [ #test task regression
         ['TaskRegression',  1, []]
         ],
@@ -838,6 +848,73 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
             intpts = np.interp(censored,tpoints,cens_tseries)
             tseries[censored] = intpts
             data[i,:] = tseries
+        elif method=='power':
+            # as in Power et. al 2014 a frequency transform is used to generate data with
+            # the same phase and spectral characteristics as the unflagged data
+            N = len(tpoints) # no. of time points
+            T = (tpoints.max() - tpoints.min())*TR # total time span
+            ofac = 8 # oversampling frequency (generally >=4)
+            hifac = 1 # highest frequency allowed.  hifac = 1 means 1*nyquist limit
+
+            # compute sampling frequencies
+            f = np.arange(1/(T*ofac),hifac*N/(2*T)+1/(T*ofac),1/(T*ofac))
+            # angular frequencies and constant offsets
+            w = 2*np.pi*f
+            w = w[:,np.newaxis]
+            t = TR*tpoints[:,np.newaxis].T
+            tau = np.arctan2(np.sum(np.sin(2*w*(t+1)),1),np.sum(np.cos(2*w*(t+1)),1))/(2*np.squeeze(w))
+
+            # spectral power sin and cosine terms
+            sterm = np.sin(w*(t+1) - (np.squeeze(w)*tau)[:,np.newaxis])
+            cterm = np.cos(w*(t+1) - (np.squeeze(w)*tau)[:,np.newaxis])
+
+            mean_ct = cens_tseries.mean()
+            D = cens_tseries - mean_ct
+
+            c = np.sum(cterm * D,1) / np.sum(np.power(cterm,2),1)
+            s = np.sum(sterm * D,1) / np.sum(np.power(sterm,2),1)
+
+            # The inverse function to re-construct the original time series
+            full_tpoints = (np.arange(nTRs)[:,np.newaxis]+1).T*TR
+            prod = full_tpoints*w
+            sin_t = np.sin(prod)
+            cos_t = np.cos(prod)
+            sw_p = sin_t*s[:,np.newaxis]
+            cw_p = cos_t*c[:,np.newaxis]
+            S = np.sum(sw_p,axis=0)
+            C = np.sum(cw_p,axis=0)
+            H = C + S
+
+            # Normalize the reconstructed spectrum, needed when ofac > 1
+            Std_H = np.std(H, ddof=1)
+            Std_h = np.std(cens_tseries,ddof=1)
+            norm_fac = Std_H/Std_h
+            H = H/norm_fac
+            H = H + mean_ct
+
+            intpts = H[censored]
+            tseries[censored] = intpts
+            data[i,:] = tseries
+        elif method == 'astropy':
+            lombs = LombScargle(tpoints*TR, cens_tseries)
+            frequency, power = lombs.autopower(normalization='standard', samples_per_peak=8, nyquist_factor=1, method='fast')
+            pwsort = np.argsort(power)
+            frequency = frequency[pwsort[-100:]]
+            mean_ct = np.mean(cens_tseries)
+            for f in np.arange(len(frequency)):
+                if f == 0:
+                    y_all = lombs.model(censored*TR, frequency[f])
+                else:
+                    y_all = y_all + lombs.model(censored*TR, frequency[f])
+            y_all = y_all - mean_ct*len(frequency)
+            Std_y = np.std(y_all, ddof=1)
+            Std_h = np.std(cens_tseries,ddof=1)
+            norm_fac = Std_y/Std_h
+            y_final = y_all/norm_fac
+            intpts = y_final + np.mean(cens_tseries)
+            tseries[censored] = intpts
+            data[i,:] = tseries
+        else:
         else:
             print("Wrong interpolation method: nothing was done")
             break
@@ -1037,6 +1114,19 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         data = get_confounds()
         score = np.array(data['dvars']).astype(float)
         score[np.isnan(score)] = 0
+    elif flavor[0] == 'FD-DVARS': # as in Siegel et al. 2016
+        data = get_confounds()
+        score = np.array(data['framewise_displacement']).astype(float)
+        score[np.isnan(score)] = 0
+        scoreDVARS = np.array(data['dvars']).astype(float)
+        scoreDVARS[np.isnan(scoreDVARS)] = 0
+        cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
+        thr2 = flavor[2]
+        censDVARS = scoreDVARS > thr2
+        censored = np.where(np.logical_or(np.ravel(cleanFD)>thr,censDVARS))
+        np.savetxt(op.join(outpath(), 'FD.txt'), score, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'cleanFD.txt'), cleanFD, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
         censored = score > (100+thr)/100* np.median(score)
     elif flavor[0] == 'FD+DVARS': # as in Siegel et al. 2016
         data = get_confounds()
@@ -1086,14 +1176,14 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     else:
         print('Wrong scrubbing flavor. Nothing was done')
         return niiImg[0],niiImg[1]
-    
-    if (len(flavor)>3 and flavor[0] == 'FD+DVARS'):
+    pattern = re.compile("FD.DVARS")
+    if len(flavor)>3 and pattern.match(flavor[0]):
         pad = flavor[3]
         a_minus = [i-k for i in censored[0] for k in range(1, pad+1)]
         a_plus  = [i+k for i in censored[0] for k in range(1, pad+1)]
         censored = np.concatenate((censored[0], a_minus, a_plus))
         censored = np.unique(censored[np.where(np.logical_and(censored>=0, censored<len(score)))])
-    elif len(flavor) > 2 and flavor[0] != 'FD+DVARS':
+    elif len(flavor) > 2 and pattern.match(flavor[0]) is None:
         pad = flavor[2]
         a_minus = [i-k for i in censored[0] for k in range(1, pad+1)]
         a_plus  = [i+k for i in censored[0] for k in range(1, pad+1)]
@@ -1283,9 +1373,9 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
         censored = np.atleast_1d(censored)
         if len(censored)<nTRs and len(censored) > 0:
-            data = interpolate(niiImg[0],censored,TR,nTRs,method='linear')     
+            data = interpolate(niiImg[0],censored,TR,nTRs,method=config.interpolation)     
             if niiImg[1] is not None:
-                data2 = interpolate(niiImg[1],censored,TR,nTRs,method='linear')
+                data2 = interpolate(niiImg[1],censored,TR,nTRs,method=config.interpolation)
         else:
             data = niiImg[0]
             if niiImg[1] is not None:
