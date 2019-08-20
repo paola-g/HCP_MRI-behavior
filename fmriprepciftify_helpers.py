@@ -1126,7 +1126,6 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         np.savetxt(op.join(outpath(), 'FD.txt'), score, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'cleanFD.txt'), cleanFD, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
-        censored = score > (100+thr)/100* np.median(score)
     elif flavor[0] == 'FD+DVARS': # as in Siegel et al. 2016
         data = get_confounds()
         score = np.array(data['framewise_displacement']).astype(float)
