@@ -180,8 +180,8 @@ config.operationDict = {
         ['Detrending',              2, ['poly', 1, 'wholebrain']],
         ['TissueRegression',        3, ['WMCSF+dt', 'wholebrain']],
         ['MotionRegression',        3, ['R dR']],
-        ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]]
-        ['GlobalSignalRegression',  3, ['GS+dt']]
+        ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]],
+        ['GlobalSignalRegression',  3, ['GS+dt']],
         ['Scrubbing',               5, ['FD-DVARS', 0.2, 50]], 
         ],
     'Task': [ #test task regression
