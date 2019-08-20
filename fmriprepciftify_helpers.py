@@ -915,7 +915,6 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
             tseries[censored] = intpts
             data[i,:] = tseries
         else:
-        else:
             print("Wrong interpolation method: nothing was done")
             break
     return data
