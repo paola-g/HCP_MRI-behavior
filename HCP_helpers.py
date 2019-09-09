@@ -23,8 +23,8 @@ class config(object):
     outDir             = 'rsDenoise'								
     FCDir              = 'FC'
     headradius         = 50 #50mm as in Powers et al. 2012
-    melodicFolder      =  op.join('#fMRIrun#_hp2000.ica','filtered_func_data.ica') #the code #fMRIrun# will be replaced
-
+    melodicFolder      = op.join('#fMRIrun#_hp2000.ica','filtered_func_data.ica') #the code #fMRIrun# will be replaced
+    plotSteps          = False # produce a grayplot after each processing step
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -53,6 +53,7 @@ from subprocess import call, check_output, CalledProcessError, Popen, getoutput
 import nibabel as nib
 import sklearn.model_selection as cross_validation
 from sklearn.linear_model import ElasticNetCV
+from sklearn.kernel_ridge import KernelRidge
 from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
 from sklearn.covariance import MinCovDet,GraphLassoCV
@@ -158,6 +159,15 @@ def get_EVs(path,task):
 config.operationDict = {
     'Task': [ #test task regression
         ['TaskRegression',  1, []]
+        ],
+     'MyConnectome': [
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 1, 'wholebrain']],
+        ['TissueRegression',        3, ['WMCSF', 'wholebrain']],
+        ['MotionRegression',        3, ['R R^2 R-1 R-1^2']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]],
+        ['Scrubbing',               5, ['FD', 0.25]]
         ],
     'A': [ #Finn et al. 2015
         ['VoxelNormalization',      1, ['zscore']],
@@ -1121,6 +1131,15 @@ def retrieve_preprocessed(inputFile, operations, outputDir, isCifti):
             prev_step = opr[1]                
     precomputed = checkXML(inputFile,steps,Flavors,outputDir,isCifti) 
     return precomputed 																								 
+def correlationKernel(X1, X2):
+    """(Pre)calculates Gram Matrix K"""
+
+    gram_matrix = np.zeros((X1.shape[0], X2.shape[0]))
+    for i, x1 in enumerate(X1):
+        for j, x2 in enumerate(X2):
+            gram_matrix[i, j] = stats.pearsonr(x1, x2)[0]
+    return gram_matrix
+
 # ---------------------
 # Pipeline Operations
 def TaskRegression(niiImg, flavor, masks, imgInfo):
@@ -1522,7 +1541,7 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
 
     if config.doScrubbing:
-        censored = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
+        censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
         censored = np.atleast_1d(censored)
         if len(censored)<nTRs and len(censored) > 0:
             data = interpolate(niiImg[0],censored,TR,nTRs,method='linear')     
@@ -1643,6 +1662,58 @@ def computeFD():
     disp[:,3:]=np.pi*config.headradius*2*(disp[:,3:]/360)
     score=np.sum(disp,1)
     return score
+## 
+#  @brief Generate gray plot
+#  
+#  @param [bool] displayPlot True if plot should be displayed
+#  @param [bool] overwrite True if existing files should be overwritten
+#  
+def stepPlot(X,operationName, displayPlot=False,overwrite=False):
+    savePlotFile = op.join(outpath(),operationName+'_grayplot.png')
+    print(savePlotFile)
+    sys.stdout.flush()
+    if not op.isfile(savePlotFile) or overwrite:
+        
+        if not config.isCifti:
+            # load masks
+            maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
+
+        fig = plt.figure(figsize=(15,8))
+        ax1 = plt.subplot(111)
+
+        # denoised volume
+        if not config.isCifti:
+            X = stats.zscore(X, axis=1, ddof=1)
+            Xgm  = X[maskGM_,:]
+            Xwm  = X[maskWM_,:]
+            Xcsf = X[maskCSF_,:]
+        else:
+            # cifti
+            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            if not op.isfile(tsvFile):
+                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
+                call(cmd,shell=True)
+            Xgm = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
+            nTRs = Xgm.shape[1]
+            Xgm = stats.zscore(Xgm, axis=1, ddof=1)
+
+        if not config.isCifti:
+            im = plt.imshow(np.vstack((Xgm,Xwm,Xcsf)), aspect='auto', interpolation='none', cmap=plt.cm.gray)
+        else:
+            im = plt.imshow(Xgm, aspect='auto', interpolation='none', cmap=plt.cm.gray)
+        im.set_clim(vmin=-3, vmax=3)
+        plt.title(operationName)
+        plt.ylabel('Voxels')
+        if not config.isCifti:
+            plt.axhline(y=np.sum(maskGM_), color='r')
+            plt.axhline(y=np.sum(maskGM_)+np.sum(maskWM_), color='b')
+
+        # prettify
+        fig.subplots_adjust(right=0.9)
+        fig.colorbar(im)
+        # save figure
+        fig.savefig(savePlotFile, bbox_inches='tight',dpi=75)
+
 
 ## 
 #  @brief Generate gray plot
@@ -1997,7 +2068,7 @@ def computeFC(overwrite=False):
         ts = np.loadtxt(alltsFile)
         # censor time points that need censoring
         if config.doScrubbing:
-            censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
+            censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
             censored = np.atleast_1d(censored)
             tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
             ts = ts[tokeep,:]
@@ -2125,7 +2196,7 @@ def defConVec(df,confound,session):
 #  @iPerm     [array_like] vector of permutation indices, if [0] no permutation test is run
 #  @SM        [str] subject measure name
 #  @session   [str] session identifier (one of 'REST1', 'REST2, 'REST12')
-#  @model     [str] regression model type (either 'Finn' or 'elnet')
+#  @model     [str] regression model type ('Finn', 'elnet' or 'krr')
 #  @outDir    [str] output directory
 #  @confounds [list] confound vector
 #  
@@ -2270,6 +2341,37 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             results        = {'score':y_test,'pred':prediction, 'coef':elnet.coef_, 'alpha':elnet.alpha_, 'l1_ratio':elnet.l1_ratio_, 'idx_filtered':idx_filtered}
             print('saving results')
             sio.savemat(outFile,results)        
+        elif model=='krr':
+            X_train, X_test, y_train, y_test = edges[np.ix_(train_index,idx_filtered)], edges[np.ix_(test_index,idx_filtered)], score[train_index], score[test_index]
+            rbX            = RobustScaler()
+            X_train        = rbX.fit_transform(X_train)
+            # equalize distribution of score for cv folds
+            n_bins_cv      = 4
+            hist_cv, bin_limits_cv = np.histogram(y_train, n_bins_cv)
+            bins_cv        = np.digitize(y_train, bin_limits_cv[:-1])
+            # Fit KernelRidge with parameter selection based on stratified k-fold cross validation
+            nCV_gridsearch = 3
+            param_grid={"alpha": [1e0, 0.1, 1e-2, 1e-3]}
+
+            kr = GridSearchCV(KernelRidge(kernel='precomputed'), cv=StratifiedKFold(n_splits=nCV_gridsearch).split(X_train, bins_cv), param_grid=param_grid)
+            
+            # TRAIN
+            start_time     = time()
+            kr.fit(correlationKernel(X_train,X_train),y_train)
+            elapsed_time   = time() - start_time
+            print("Trained KRR in {0:02d}h:{1:02d}min:{2:02d}s".format(int(elapsed_time//3600),int((elapsed_time%3600)//60),int(elapsed_time%60)))   
+            # PREDICT
+            X_test         = rbX.transform(X_test)
+            if len(X_test.shape) == 1:
+                X_test     = X_test.reshape(1, -1)
+            prediction     = kr.predict(correlationKernel(X_test,X_train))
+            results        = {
+                            'test_index':test_index,
+                            'score':y_test,
+                            'pred':prediction,
+                            'idx_filtered':idx_filtered
+                            }
+            sio.savemat(outFile,results)
         sys.stdout.flush()
     
 ## 
@@ -2440,6 +2542,8 @@ def runPipeline():
         data[np.isnan(data)] = 0
         if config.isCifti:
             volData[np.isnan(volData)] = 0
+        if config.plotSteps:
+            stepPlot(data, str(step))
 
 
     print('Done! Copy the resulting file...')

@@ -25,6 +25,7 @@ class config(object):
     smoothing          = 's0' # ciftify format, used to read CIFTI files
     preprocessing      = 'ciftify' # or 'fmriprep' or 'freesurfer'
     interpolation      = 'linear'
+    plotSteps          = False # produce a grayplot for every processing step 
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -54,6 +55,7 @@ from subprocess import call, check_output, CalledProcessError, Popen
 import nibabel as nib
 import sklearn.model_selection as cross_validation
 from sklearn.linear_model import ElasticNetCV
+from sklearn.kernel_ridge import KernelRidge
 from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
 from sklearn.covariance import MinCovDet,GraphLassoCV
@@ -74,6 +76,7 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 import seaborn as sns
 import nistats
 from nistats import design_matrix
+from astropy.timeseries import LombScargle
 
 #----------------------------------
 # function to build dinamycally path to input fMRI file
@@ -182,7 +185,16 @@ config.operationDict = {
         ['MotionRegression',        3, ['R dR']],
         ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]],
         ['GlobalSignalRegression',  3, ['GS+dt']],
-        ['Scrubbing',               5, ['FD-DVARS', 0.2, 50]], 
+        ['Scrubbing',               5, ['FD-DVARS', 0.2, 70]], 
+        ],
+    'MyConnectome': [
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 1, 'wholebrain']],
+        ['TissueRegression',        3, ['WMCSF', 'wholebrain']],
+        ['MotionRegression',        3, ['R R^2 R-1 R-1^2']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]],
+        ['Scrubbing',               5, ['FD', 0.25]]
         ],
     'Task': [ #test task regression
         ['TaskRegression',  1, []]
@@ -374,14 +386,16 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
         data = np.memmap(volFile, dtype=img.header.get_data_dtype(), mode='c', order='F',
             offset=img.dataobj.offset,shape=img.header.get_data_shape())
         if nTRs==1:
-            data = data.reshape(nRows*nCols*nSlices, order='F')[maskAll,:]
+            data = data.reshape(nRows*nCols*nSlices, order='F')
         else:
-            data = data.reshape((nRows*nCols*nSlices,data.shape[3]), order='F')[maskAll,:]
+            data = data.reshape((nRows*nCols*nSlices,data.shape[3]), order='F')
     else:
         if nTRs==1:
-            data = np.asarray(img.dataobj).reshape(nRows*nCols*nSlices, order='F')[maskAll]
+            data = np.asarray(img.dataobj).reshape(nRows*nCols*nSlices, order='F')
         else:
-            data = np.asarray(img.dataobj).reshape((nRows*nCols*nSlices,nTRs), order='F')[maskAll,:]
+            data = np.asarray(img.dataobj).reshape((nRows*nCols*nSlices,nTRs), order='F')
+    if not maskAll is None:
+        data = data[maskAll,:]
 
     return data, nRows, nCols, nSlices, nTRs, img.affine, TR, img.header
 	
@@ -986,6 +1000,16 @@ def retrieve_preprocessed(inputFile, operations, outputDir, isCifti):
     precomputed = checkXML(inputFile,steps,Flavors,outputDir,isCifti) 
     return precomputed 
 
+def correlationKernel(X1, X2):
+    """(Pre)calculates Gram Matrix K"""
+
+    gram_matrix = np.zeros((X1.shape[0], X2.shape[0]))
+    for i, x1 in enumerate(X1):
+        for j, x2 in enumerate(X2):
+            gram_matrix[i, j] = stats.pearsonr(x1, x2)[0]
+    return gram_matrix
+
+
 # ---------------------
 # Pipeline Operations
 def TaskRegression(niiImg, flavor, masks, imgInfo):
@@ -1139,7 +1163,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         np.savetxt(op.join(outpath(), 'FD.txt'), score, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'cleanFD.txt'), cleanFD, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
-    elif flavor[0] == 'RMS':
+    elif flavor[0] == 'RMS': # not working yet, needs output from mcflirt (something to to with center of rotations)
         data = get_confounds()
         regs = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         rmsdiff = np.zeros((nTRs, 1))
@@ -1487,6 +1511,58 @@ def computeFD(lowpass=None):
     if lowpass:
         score = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=lowpass)
     return score
+
+## 
+#  @brief Generate gray plot
+#  
+#  @param [bool] displayPlot True if plot should be displayed
+#  @param [bool] overwrite True if existing files should be overwritten
+#  
+def stepPlot(X,operationName, displayPlot=False,overwrite=False):
+    savePlotFile = op.join(outpath(),operationName+'_grayplot.png')
+    print(savePlotFile)
+    sys.stdout.flush()
+    if not op.isfile(savePlotFile) or overwrite:
+        
+        if not config.isCifti:
+            # load masks
+            maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
+
+        fig = plt.figure(figsize=(15,8))
+        ax1 = plt.subplot(111)
+
+        # denoised volume
+        if not config.isCifti:
+            X = stats.zscore(X, axis=1, ddof=1)
+            Xgm  = X[maskGM_,:]
+            Xwm  = X[maskWM_,:]
+            Xcsf = X[maskCSF_,:]
+        else:
+            # cifti
+            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            if not op.isfile(tsvFile):
+                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
+                call(cmd,shell=True)
+            Xgm = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
+            nTRs = Xgm.shape[1]
+            Xgm = stats.zscore(Xgm, axis=1, ddof=1)
+
+        if not config.isCifti:
+            im = plt.imshow(np.vstack((Xgm,Xwm,Xcsf)), aspect='auto', interpolation='none', cmap=plt.cm.gray)
+        else:
+            im = plt.imshow(Xgm, aspect='auto', interpolation='none', cmap=plt.cm.gray)
+        im.set_clim(vmin=-3, vmax=3)
+        plt.title(operationName)
+        plt.ylabel('Voxels')
+        if not config.isCifti:
+            plt.axhline(y=np.sum(maskGM_), color='r')
+            plt.axhline(y=np.sum(maskGM_)+np.sum(maskWM_), color='b')
+
+        # prettify
+        fig.subplots_adjust(right=0.9)
+        fig.colorbar(im)
+        # save figure
+        fig.savefig(savePlotFile, bbox_inches='tight',dpi=75)
 
 ## 
 #  @brief Generate gray plot
@@ -1961,7 +2037,7 @@ def defConVec(df,confound,session):
 #  @iPerm     [array_like] vector of permutation indices, if [0] no permutation test is run
 #  @SM        [str] subject measure name
 #  @session   [str] session identifier (one of 'REST1', 'REST2, 'REST12')
-#  @model     [str] regression model type (either 'Finn' or 'elnet')
+#  @model     [str] regression model type ('Finn', 'elnet' or 'krr')
 #  @outDir    [str] output directory
 #  @confounds [list] confound vector
 #  
@@ -2101,6 +2177,37 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             results        = {'score':y_test,'pred':prediction, 'coef':elnet.coef_, 'alpha':elnet.alpha_, 'l1_ratio':elnet.l1_ratio_, 'idx_filtered':idx_filtered}
             print('saving results')
             sio.savemat(outFile,results)        
+        elif model=='krr':
+            X_train, X_test, y_train, y_test = edges[np.ix_(train_index,idx_filtered)], edges[np.ix_(test_index,idx_filtered)], score[train_index], score[test_index]
+            rbX            = RobustScaler()
+            X_train        = rbX.fit_transform(X_train)
+            # equalize distribution of score for cv folds
+            n_bins_cv      = 4
+            hist_cv, bin_limits_cv = np.histogram(y_train, n_bins_cv)
+            bins_cv        = np.digitize(y_train, bin_limits_cv[:-1])
+            # Fit KernelRidge with parameter selection based on stratified k-fold cross validation
+            nCV_gridsearch = 3
+            param_grid={"alpha": [1e0, 0.1, 1e-2, 1e-3]}
+
+            kr = GridSearchCV(KernelRidge(kernel='precomputed'), cv=cross_validation.StratifiedKFold(n_splits=nCV_gridsearch).split(X_train, bins_cv), param_grid=param_grid)
+            
+            # TRAIN
+            start_time     = time()
+            kr.fit(correlationKernel(X_train,X_train),y_train)
+            elapsed_time   = time() - start_time
+            print("Trained KRR in {0:02d}h:{1:02d}min:{2:02d}s".format(int(elapsed_time//3600),int((elapsed_time%3600)//60),int(elapsed_time%60)))   
+            # PREDICT
+            X_test         = rbX.transform(X_test)
+            if len(X_test.shape) == 1:
+                X_test     = X_test.reshape(1, -1)
+            prediction     = kr.predict(correlationKernel(X_test,X_train))
+            results        = {
+                            'test_index':test_index,
+                            'score':y_test,
+                            'pred':prediction,
+                            'idx_filtered':idx_filtered
+                            }
+            sio.savemat(outFile,results)
         sys.stdout.flush()
     
 ## 
@@ -2212,9 +2319,12 @@ def runPipeline():
     sortedOperations = config.sortedOperations
     
     timeStart = localtime()
-    print('Step 0 : Building WM, CSF and GM masks...')
-    masks = makeTissueMasks(overwrite=config.overwrite)
-    maskAll, maskWM_, maskCSF_, maskGM_ = masks    
+    if config.preprocessing != 'surface':
+        print('Step 0 : Building WM, CSF and GM masks...')
+        masks = makeTissueMasks(overwrite=config.overwrite)
+        maskAll, maskWM_, maskCSF_, maskGM_ = masks    
+    else:
+        masks = [None, None, None, None] # I could pass at least maskAll and set the others to None
 
     if config.isCifti:
         # volume
@@ -2233,6 +2343,9 @@ def runPipeline():
         print('Loading [volume] data in memory... {}'.format(config.fmriFile))
         data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         volData = None
+
+    if masks[0] is None:
+        masks[0] = np.where(data.any(axis=1))[0]
        
     nsteps = len(steps)
     for i in range(1,nsteps+1):
@@ -2269,6 +2382,8 @@ def runPipeline():
         data[np.isnan(data)] = 0
         if config.isCifti:
             volData[np.isnan(volData)] = 0
+        if config.plotSteps:
+            stepPlot(data, str(step))
 
 
     print('Done! Copy the resulting file...')
@@ -2315,7 +2430,10 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         config.ext = '.nii.gz'
 
     if hasattr(config,'fmriFileTemplate'):
-        config.fmriFile = op.join(config.DATADIR, config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session).replace('#subjectID#', config.subject))
+        if hasattr(config, 'session'):
+            config.fmriFile = op.join(config.DATADIR, config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session).replace('#subjectID#', config.subject))
+        else:
+            config.fmriFile = op.join(config.DATADIR, config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#subjectID#', config.subject))
     else:
         prefix = config.session+'_' if  hasattr(config,'session')  else ''
         if config.isCifti:
