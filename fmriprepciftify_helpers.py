@@ -1040,9 +1040,8 @@ def distcorr(X, Y):
     return dcor
 
 # the function parcellate() will save a time series per each voxel if config.save_voxelwise = True
-def compute_mFC(tsDir, overwrite=False):
+def compute_mFC(tsDir, rstring, overwrite=False):
     parcelData = []
-    rstring = 'hskqBdLk'
     for iParcel in np.arange(config.nParcels):
         tsFileAll = op.join(tsDir,'parcel{:03d}_{}_all.txt'.format(iParcel+1,rstring))
         if not op.isfile(tsFileAll) or overwrite:
