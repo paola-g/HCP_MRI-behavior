@@ -1009,6 +1009,55 @@ def correlationKernel(X1, X2):
             gram_matrix[i, j] = stats.pearsonr(x1, x2)[0]
     return gram_matrix
 
+def distcorr(X, Y):
+    """ Compute the distance correlation function
+    
+    >>> a = [1,2,3,4,5]
+    >>> b = np.array([1,2,9,4,4])
+    >>> distcorr(a, b)
+    0.762676242417
+    """
+    X = np.atleast_1d(X)
+    Y = np.atleast_1d(Y)
+    if np.prod(X.shape) == len(X):
+        X = X[:, None]
+    if np.prod(Y.shape) == len(Y):
+        Y = Y[:, None]
+    X = np.atleast_2d(X)
+    Y = np.atleast_2d(Y)
+    n = X.shape[0]
+    if Y.shape[0] != X.shape[0]:
+        raise ValueError('Number of samples must match')
+    a = squareform(pdist(X))
+    b = squareform(pdist(Y))
+    A = a - a.mean(axis=0)[None, :] - a.mean(axis=1)[:, None] + a.mean()
+    B = b - b.mean(axis=0)[None, :] - b.mean(axis=1)[:, None] + b.mean()
+    
+    dcov2_xy = (A * B).sum()/float(n * n)
+    dcov2_xx = (A * A).sum()/float(n * n)
+    dcov2_yy = (B * B).sum()/float(n * n)
+    dcor = np.sqrt(dcov2_xy)/np.sqrt(np.sqrt(dcov2_xx) * np.sqrt(dcov2_yy))
+    return dcor
+
+# the function parcellate() will save a time series per each voxel if config.save_voxelwise = True
+def compute_mFC(tsDir, overwrite=False):
+    parcelData = []
+    rstring = 'hskqBdLk'
+    for iParcel in np.arange(config.nParcels):
+        tsFileAll = op.join(tsDir,'parcel{:03d}_{}_all.txt'.format(iParcel+1,rstring))
+        if not op.isfile(tsFileAll) or overwrite:
+            parcelData.append(np.transpose(data[np.where(allparcels==iParcel+1)[0],:]))
+        else:
+            parcelData.append(np.loadtxt(tsFileAll,delimiter=','))
+        mFC = np.zeros([config.nParcels, config.nParcels])
+    for iParcel in np.arange(config.nParcels):
+        for jParcel in np.arange(config.nParcels):
+            if iParcel>jParcel:
+                mFC[iParcel,jParcel] = distcorr(parcelData[iParcel],parcelData[jParcel])
+                mFC[jParcel,iParcel] = mFC[iParcel,jParcel]
+    return mFC
+
+
 
 # ---------------------
 # Pipeline Operations
@@ -1377,7 +1426,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:]/np.max(y[i,:])        
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
-        return y[1:nPoly,:].T    
+        return y.T    
     else:
         print('Warning! Wrong detrend mask. Nothing was done' )
 
@@ -1408,11 +1457,31 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
             data2 = niiImg[1]
 
     if flavor[0] == 'Butter':
-        niiImg[0] = clean(data.T, detrend=False, standardize=False, 
-                              t_r=TR, high_pass=flavor[1], low_pass=flavor[2]).T
+        R = 0.1
+        Nr = 50
+        x = data.T
+        N = x.shape[0]
+        NR = min(round(N*R),Nr)
+        x1 = np.zeros((NR, x.shape[1]))
+        x2 = np.zeros((NR, x.shape[1]))
+        for i in range(x.shape[1]):
+            x1[:,i] = 2*x[0,i] - np.flipud(x[1:NR+1,i])
+            x2[:,i] = 2*x[-1,i] - np.flipud(x[-NR-1:-1,i])
+        x = np.vstack([x1,x,x2])
+        x = clean(x, detrend=False, standardize=False, 
+                              t_r=TR, high_pass=flavor[1], low_pass=flavor[2])
+        niiImg[0] = x[NR:-NR,:].T
         if niiImg[1] is not None:
-            niiImg[1] = clean(data2.T, detrend=False, standardize=False, 
-               t_r=TR, high_pass=flavor[1], low_pass=flavor[2]).T
+            x = data2.T
+            x1 = np.zeros((NR, x.shape[1]))
+            x2 = np.zeros((NR, x.shape[1]))
+            for i in range(x.shape[2]):
+                x1[:,i] = 2*x[0,i] - np.flipud(x[1:NR+1,i])
+                x2[:,i] = 2*x[-1,i] - np.flipud(x[-NR-1:-1,i])
+            x = np.vstack([x1,x,x2])
+            x = clean(data2.T, detrend=False, standardize=False, 
+               t_r=TR, high_pass=flavor[1], low_pass=flavor[2])
+            niiImg[1] = x[NR:-NR,:].T
             
     elif flavor[0] == 'Gaussian':
         w = signal.gaussian(11,std=flavor[1])
@@ -1520,8 +1589,6 @@ def computeFD(lowpass=None):
 #  
 def stepPlot(X,operationName, displayPlot=False,overwrite=False):
     savePlotFile = op.join(outpath(),operationName+'_grayplot.png')
-    print(savePlotFile)
-    sys.stdout.flush()
     if not op.isfile(savePlotFile) or overwrite:
         
         if not config.isCifti:
