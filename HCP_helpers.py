@@ -1592,8 +1592,8 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         K = dctmtx(nTRs)
         HPC = 1/flavor[1]
         LPC = 1/flavor[2]
-        nHP = np.fix(2*(nTRs*TR)/HPC + 1)
-        nLP = np.fix(2*(nTRs*TR)/LPC + 1)
+        nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
+        nLP = int(np.fix(2*(nTRs*TR)/LPC + 1))
         K = K[:,np.concatenate((range(1,nHP),range(int(nLP)-1,nTRs)))]
         return K
     else:
