@@ -1131,6 +1131,7 @@ def retrieve_preprocessed(inputFile, operations, outputDir, isCifti):
             prev_step = opr[1]                
     precomputed = checkXML(inputFile,steps,Flavors,outputDir,isCifti) 
     return precomputed 																								 
+
 def correlationKernel(X1, X2):
     """(Pre)calculates Gram Matrix K"""
 
@@ -1139,6 +1140,19 @@ def correlationKernel(X1, X2):
         for j, x2 in enumerate(X2):
             gram_matrix[i, j] = stats.pearsonr(x1, x2)[0]
     return gram_matrix
+
+def dctmtx(N):
+    """
+    Largely based on http://www.mrc-cbu.cam.ac.uk/wp-content/uploads/2013/01/rsfMRI_GLM.m
+    """
+    K=N
+    n = range(N)
+    C = np.zeros((len(n), K),dtype=np.float32)
+    C[:,0] = np.ones((len(n)),dtype=np.float32)/np.sqrt(N)
+    doublen = [2*x+1 for x in n]
+    for k in range(1,K):
+        C[:,k] = np.sqrt(2/N)*np.cos([np.pi*x*(k-1)/(2*N) for x in doublen])        
+    return C 
 
 # ---------------------
 # Pipeline Operations
@@ -1493,6 +1507,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:]/np.max(y[i,:]) 
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
+            return niiImg[0],niiImg[1]     
         niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y.T, config.preWhitening)
         volData[np.logical_or(maskWM_,maskCSF_),:] = niiImgWMCSF
     elif flavor[2] == 'GM':
@@ -1509,6 +1524,9 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = (x - (np.max(x)/2)) **(i+1)
                 y[i,:] = y[i,:] - np.mean(y[i,:])
                 y[i,:] = y[i,:]/np.max(y[i,:])
+        else:
+            print('Warning! Wrong detrend flavor. Nothing was done')
+            return niiImg[0],niiImg[1]     
         niiImgGM = regress(niiImgGM, nTRs, TR, y.T, config.preWhitening)
         if config.isCifti:
             niiImg[0] = niiImgGM
@@ -1526,6 +1544,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:]/np.max(y[i,:])        
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
+        print(y)
         return y.T    
     else:
         print('Warning! Wrong detrend mask. Nothing was done' )
@@ -1535,6 +1554,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
     else:
         niiImg[0] = volData            
     return niiImg[0],niiImg[1]     
+   
    
 def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
@@ -1670,7 +1690,6 @@ def computeFD():
 #  
 def stepPlot(X,operationName, displayPlot=False,overwrite=False):
     savePlotFile = op.join(outpath(),operationName+'_grayplot.png')
-    print(savePlotFile)
     sys.stdout.flush()
     if not op.isfile(savePlotFile) or overwrite:
         
