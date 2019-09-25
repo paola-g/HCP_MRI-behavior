@@ -1121,6 +1121,26 @@ def AR1_FC(alltc):
         fcMats[i,:] = B[:,1:].reshape(-1)
     return fcMats
 
+def within_sub_edge_var(alltc, measure, sample_size = 0.1, n_rep = 10):
+    n_subjects = len(alltc)
+    n_rois = alltc[0].shape[1]
+    var_edges = np.zeros((n_subjects, int(n_rois*(n_rois-1)/2)))
+    for i in range(n_subjects):
+        n_timepoints = alltc[i].shape[0]
+        sample_timepoints = np.array([random.sample(range(n_timepoints),int(np.round(n_timepoints*sample_size))) for i in range(n_rep)])
+        sample_tc = [alltc[i][sample_timepoints]]
+        FCsamples = measure.fit_transform([alltc[i][sample_timepoints[j,:],:] for j in range(n_rep)])
+        var_edges[i,:] = np.var(FCsamples,axis=0,ddof=1)
+    return np.mean(var_edges,axis=0)
+
+def between_sub_edge_var(fcMats):
+    return np.var(fcMats, axis=0, ddof=1)
+
+def rank_variance_ratio(between, within):
+    ratio = between/within    
+    sorted_idx = np.argsort(ratio)
+    return sorted_idx[::-1]
+
 # ---------------------
 # Pipeline Operations
 def TaskRegression(niiImg, flavor, masks, imgInfo):
