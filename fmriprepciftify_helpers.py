@@ -1056,7 +1056,70 @@ def compute_mFC(tsDir, rstring, overwrite=False):
                 mFC[jParcel,iParcel] = mFC[iParcel,jParcel]
     return mFC
 
+# Input
+#
+# 'TS' : original time course encoded in a matrix of size (T=number of time points,k=number of variables/ROIs)
+# 'p'  : order of the AR model to be identified
+#
+# Given these inputs, the AR model of order 'p' reads:
+#
+# TS(t,:)' = w + \sum_i=1^p A_i * TS(t-i,:)' + e(t),     Eq. (1)
+#
+# where: w    is an intercept vector of size (T,1). It is supposed to be
+#             zero if timecourses are centered.
+#        A_i  are matrices of size k*k linking T(t,:) and T(t-i,:).
+#        e(t) is an error vector of size (T,1) following a centered multivariate gaussian distribution
+#
+# Eq. (1) can be written for all t \in [p+1...T]. Concatenating these
+# (T-p) equations yields the following matrix form:
+#
+# Y = B*Z+E,    Eq. (2)
+#
+# where: Y = [TS(p+1,:)' TS(p+2,:)' ... TS(T,:)'] is a matrix of size (k,T-p)
+#
+#        B = [w A_1 ... A_p] is a matrix of size (k,k*p+1) that
+#        gathers unknown parameters of the model
+#
+#            |    1             1           ...        1     |
+#            | TS(p,:)'     TS(p+1,:)'      ...    TS(T-1,:)'|
+#            |TS(p-1,:)'     TS(p,:)'       ...    TS(T-2,:)'|
+#        Z = |    .             .          .           .     |
+#            |    .             .            .         .     |
+#            |    .             .              .       .     |
+#            | TS(1,:)'      TS(2,:)'       ...    TS(T-p,:)'|
+#
+#        is a matrix of size (k*p+1,T-p) that is directly built from the input TS.
+#
+#        E = [e(p+1) e(p+2) ... e(T)] is a matrix of size (k,T-p)
+#        containing the residuals of the multivariate AR model.
+#
+# Output
+#
+# 'Y'             Matrix variables directly built from TS (see Eq. (2))
+# 'B'             Matrix containing AR model parameters
+# 'Z'             Matrix variables directly built from TS (see Eq. (2))
+# 'E'             Residuals of the AR model
+def ar_mls(TS,p):
+    T = TS.shape[0]
+    k = TS.shape[1]
+    Z = np.zeros([k*p+1,T-p])
+    Y = TS[p:,:].T
+    Z[0,:] = 1
+    for j in range(p):
+        Z[j*k+1 : (j+1)*k+1, :] = TS[p-(j+1):T-(j+1), :].T
 
+    B = linalg.lstsq(np.dot(Z,Z.T).T, np.dot(Y,Z.T).T)[0].T
+    E   = Y-np.dot(B,Z)
+    return [Y,B,Z,E]
+
+def AR1_FC(alltc):
+    n_subj = len(alltc)
+    n_rois = alltc[0].shape[1]
+    fcMats = np.zeros([n_subj, n_rois*n_rois])
+    for i in range(n_subj):
+        [_,B,_,_] = ar_mls(alltc[i],1)
+        fcMats[i,:] = B[:,1:].reshape(-1)
+    return fcMats
 
 # ---------------------
 # Pipeline Operations
