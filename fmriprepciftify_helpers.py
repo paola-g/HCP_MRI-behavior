@@ -183,9 +183,9 @@ config.operationDict = {
         ['Detrending',              2, ['poly', 1, 'wholebrain']],
         ['TissueRegression',        3, ['WMCSF+dt', 'wholebrain']],
         ['MotionRegression',        3, ['R dR']],
-        ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]],
+        ['TemporalFiltering',       4, ['DCT', 0.009, 0.08]],
         ['GlobalSignalRegression',  3, ['GS+dt']],
-        ['Scrubbing',               5, ['FD-DVARS', 0.2, 70]], 
+        ['Scrubbing',               5, ['FD-DVARS', 0.2, 50]], 
         ],
     'MyConnectome': [
         ['VoxelNormalization',      1, ['demean']],
