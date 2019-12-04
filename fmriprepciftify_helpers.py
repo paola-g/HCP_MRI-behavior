@@ -472,7 +472,7 @@ def makeTissueMasks(overwrite=False,precomputed=False, maskThreshold=0.33):
             cmd = 'rm {} {}'.format(eyeMat, wmparcMat)
             call(cmd,shell=True)
 
-        elif config.preprocessing == 'freesurfer': # output of fmriprepa + freesurfer
+        elif config.preprocessing == 'freesurfer': # output of fmriprep + freesurfer
             prefix = config.session+'_' if  hasattr(config,'session')  else ''
             wmparcFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session if  hasattr(config,'session')  else '', 'func',
                 config.subject+'_'+prefix+config.fmriRun+'_space-T1w_desc-aseg_dseg.nii.gz')
@@ -1268,7 +1268,8 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         data = get_confounds()
         score = np.array(data['dvars']).astype(float)
         score[np.isnan(score)] = 0
-    elif flavor[0] == 'FD-DVARS': # as in Siegel et al. 2016
+        censored = np.where(score>thr)
+    elif flavor[0] == 'FD-DVARS': 
         data = get_confounds()
         score = np.array(data['framewise_displacement']).astype(float)
         score[np.isnan(score)] = 0
@@ -1347,8 +1348,8 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     for i in range(len(censored)):
         if censored[i] > 0 and censored[i] < 5:
             toAppend = np.union1d(toAppend,np.arange(0,censored[i]))
-        elif censored[i] > 1200 - 5:
-            toAppend = np.union1d(toAppend,np.arange(censored[i]+1,1200))
+        elif censored[i] > nTRs - 5:
+            toAppend = np.union1d(toAppend,np.arange(censored[i]+1,nTRs))
         elif i<len(censored) - 1:
             gap = censored[i+1] - censored[i] 
             if gap > 1 and gap <= 5:
