@@ -1560,7 +1560,7 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
     nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
 
-    if config.doScrubbing:
+    if config.doScrubbing and flavor[0] in ['Butter','Gaussian']:
         censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
         censored = np.atleast_1d(censored)
         if len(censored)<nTRs and len(censored) > 0:

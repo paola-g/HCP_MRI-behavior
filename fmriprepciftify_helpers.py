@@ -183,9 +183,9 @@ config.operationDict = {
         ['Detrending',              2, ['poly', 1, 'wholebrain']],
         ['TissueRegression',        3, ['WMCSF+dt', 'wholebrain']],
         ['MotionRegression',        3, ['R dR']],
-        ['TemporalFiltering',       4, ['DCT', 0.009, 0.08]],
+        ['TemporalFiltering',       3, ['DCT', 0.009, 0.08]],
         ['GlobalSignalRegression',  3, ['GS+dt']],
-        ['Scrubbing',               5, ['FD-DVARS', 0.2, 50]], 
+        ['Scrubbing',               4, ['FD-DVARS', 0.2, 50]], 
         ],
     'MyConnectome': [
         ['VoxelNormalization',      1, ['demean']],
@@ -1523,7 +1523,7 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
     maskAll, maskWM_, maskCSF_, maskGM_ = masks
     nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
 
-    if config.doScrubbing:
+    if config.doScrubbing and flavor[0] in ['Butter','Gaussian']:
         censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
         censored = np.atleast_1d(censored)
         if len(censored)<nTRs and len(censored) > 0:
