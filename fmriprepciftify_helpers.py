@@ -415,7 +415,7 @@ def makeTissueMasks(overwrite=False,precomputed=False, maskThreshold=0.33):
     if not op.isfile(GMmaskFileout) or overwrite:
         if (config.preprocessing).lower() == 'ciftify' :
             # load wmparc.nii.gz
-            wmparcFilein = op.join(config.DATADIR, 'ciftify', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
+            wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
             # make sure it is resampled to the same space as the functional run
             wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
             # make identity matrix to feed to flirt for resampling
