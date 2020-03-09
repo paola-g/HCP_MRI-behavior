@@ -26,6 +26,8 @@ class config(object):
     preprocessing      = 'ciftify' # or 'fmriprep' or 'freesurfer'
     interpolation      = 'linear'
     plotSteps          = False # produce a grayplot for every processing step 
+    isCifti            = False
+    isGifti            = False
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -413,7 +415,7 @@ def makeTissueMasks(overwrite=False,precomputed=False, maskThreshold=0.33):
     if not op.isfile(GMmaskFileout) or overwrite:
         if (config.preprocessing).lower() == 'ciftify' :
             # load wmparc.nii.gz
-            wmparcFilein = op.join(config.DATADIR, 'hcp', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
+            wmparcFilein = op.join(config.DATADIR, 'ciftify', config.subject, 'MNINonLinear', 'wmparc.nii.gz')
             # make sure it is resampled to the same space as the functional run
             wmparcFileout = op.join(outpath(), 'wmparc.nii.gz')
             # make identity matrix to feed to flirt for resampling
@@ -787,9 +789,14 @@ def sorted_ls(path, reverseOrder):
 #  @param [bool] useMostRecent True if most recent files should be checked first
 #  @return [str] preprocessed image file name if exists, None otherwise
 #  	
-def checkXML(inFile, operations, params, resDir, isCifti=False, useMostRecent=True):
+def checkXML(inFile, operations, params, resDir, isCifti=False, isGifti=False, useMostRecent=True):
     fileList = sorted_ls(resDir, useMostRecent)
-    ext = '.dtseries.nii' if isCifti else '.nii.gz'
+    if isCifti:
+        ext = '.dtseries.nii' 
+    if isGifti:
+        ext = '.func.gii' 
+    else: 
+        ext = '.nii.gz'
     for xfile in fileList:
         if fnmatch.fnmatch(op.join(resDir,xfile), op.join(resDir,'????????.xml')):
             tree = ET.parse(op.join(resDir,xfile))
@@ -826,10 +833,12 @@ def checkXML(inFile, operations, params, resDir, isCifti=False, useMostRecent=Tr
 #  @return [str] string identifier
 #  
 def get_rcode(mystring):
-    if not config.isCifti:
-        return re.search('.*_(........)\.nii.gz', mystring).group(1)
-    else:
+    if config.isCifti:
         return re.search('.*_(........)\.dtseries.nii', mystring).group(1)
+    elif config.isGifti:
+        return re.search('.*_(........)\.func.gii', mystring).group(1)
+    else:
+        return re.search('.*_(........)\.nii.gz', mystring).group(1)
 
 def _make_gen(reader):
     b = reader(1024 * 1024)
@@ -956,7 +965,7 @@ def get_affine(R, T, S=None):
     M = np.vstack((np.hstack((np.dot(R_3x3,S_3x3), T.reshape(-1,1))),[0,0,0,1]))
     return M
 
-def retrieve_preprocessed(inputFile, operations, outputDir, isCifti):
+def retrieve_preprocessed(inputFile, operations, outputDir, isCifti, isGifti=False):
     if not op.isfile(inputFile):
         print(inputFile, 'missing')
         sys.stdout.flush()
@@ -997,7 +1006,7 @@ def retrieve_preprocessed(inputFile, operations, outputDir, isCifti):
                 steps[cstep].append(opr[0])
                 Flavors[cstep].append(opr[2])
             prev_step = opr[1]                
-    precomputed = checkXML(inputFile,steps,Flavors,outputDir,isCifti) 
+    precomputed = checkXML(inputFile,steps,Flavors,outputDir,isCifti,isGifti) 
     return precomputed 
 
 def correlationKernel(X1, X2):
@@ -1251,7 +1260,6 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     """
     thr = flavor[1]
     nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
-    maskAll, maskWM_, maskCSF_, maskGM_ = masks
 
     if flavor[0] == 'FD':
         data = get_confounds()
@@ -1296,6 +1304,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         np.savetxt(op.join(outpath(), 'cleanFD.txt'), cleanFD, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
     elif flavor[0] == 'RMS': # not working yet, needs output from mcflirt (something to to with center of rotations)
+        maskAll, maskWM_, maskCSF_, maskGM_ = masks
         data = get_confounds()
         regs = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
         rmsdiff = np.zeros((nTRs, 1))
@@ -1373,6 +1382,8 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
     data = get_confounds()    
     if config.isCifti:
         volData = niiImg[1]
+    elif config.isGifti:
+        volData = niiImg[1]
     else:
         volData = niiImg[0]
 
@@ -1438,10 +1449,14 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
     if flavor[-1] == 'GM':
         if config.isCifti:
             niiImgGM = niiImg[0]
+        elif config.isGifti:
+            niiImgGM = niiImg[0]
         else:
             niiImgGM = volData[maskGM_,:]
         niiImgGM = regress(niiImgGM, nTRs, TR, X, config.preWhitening)
         if config.isCifti:
+            niiImg[0] = niiImgGM
+        elif config.isGifti:
             niiImg[0] = niiImgGM
         else:
             volData[maskGM_,:] = niiImgGM
@@ -1459,6 +1474,8 @@ def Detrending(niiImg, flavor, masks, imgInfo):
     nPoly = flavor[1]
     
     if config.isCifti:
+        volData = niiImg[1]
+    elif config.isGifti:
         volData = niiImg[1]
     else:
         volData = niiImg[0]
@@ -1481,6 +1498,8 @@ def Detrending(niiImg, flavor, masks, imgInfo):
     elif flavor[2] == 'GM':
         if config.isCifti:
             niiImgGM = niiImg[0]
+        elif config.isGifti:
+            niiImgGM = niiImg[0]
         else:
             niiImgGM = volData[maskGM_,:]
         if flavor[0] == 'legendre':
@@ -1494,6 +1513,8 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:]/np.max(y[i,:])
         niiImgGM = regress(niiImgGM, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
         if config.isCifti:
+            niiImg[0] = niiImgGM
+        elif config.isGifti:
             niiImg[0] = niiImgGM
         else:
             volData[maskGM_,:] = niiImgGM
@@ -1515,12 +1536,13 @@ def Detrending(niiImg, flavor, masks, imgInfo):
 
     if config.isCifti:
         niiImg[1] = volData
+    elif config.isGifti:
+        niiImg[1] = volData
     else:
         niiImg[0] = volData            
     return niiImg[0],niiImg[1]     
    
 def TemporalFiltering(niiImg, flavor, masks, imgInfo):
-    maskAll, maskWM_, maskCSF_, maskGM_ = masks
     nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
 
     if config.doScrubbing and flavor[0] in ['Butter','Gaussian']:
@@ -1674,37 +1696,29 @@ def stepPlot(X,operationName, displayPlot=False,overwrite=False):
     savePlotFile = op.join(outpath(),operationName+'_grayplot.png')
     if not op.isfile(savePlotFile) or overwrite:
         
-        if not config.isCifti:
+        if not config.isCifti and not config.isGifti:
             # load masks
             maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
 
         fig = plt.figure(figsize=(15,8))
         ax1 = plt.subplot(111)
 
-        # denoised volume
-        if not config.isCifti:
+        if config.isCifti or config.isGifti:
+            Xgm = stats.zscore(X, axis=1, ddof=1)
+        else:
             X = stats.zscore(X, axis=1, ddof=1)
             Xgm  = X[maskGM_,:]
             Xwm  = X[maskWM_,:]
             Xcsf = X[maskCSF_,:]
-        else:
-            # cifti
-            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
-            if not op.isfile(tsvFile):
-                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
-                call(cmd,shell=True)
-            Xgm = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
-            nTRs = Xgm.shape[1]
-            Xgm = stats.zscore(Xgm, axis=1, ddof=1)
 
-        if not config.isCifti:
+        if not config.isCifti and not config.isGifti:
             im = plt.imshow(np.vstack((Xgm,Xwm,Xcsf)), aspect='auto', interpolation='none', cmap=plt.cm.gray)
         else:
             im = plt.imshow(Xgm, aspect='auto', interpolation='none', cmap=plt.cm.gray)
         im.set_clim(vmin=-3, vmax=3)
         plt.title(operationName)
         plt.ylabel('Voxels')
-        if not config.isCifti:
+        if not config.isCifti and not config.isGifti:
             plt.axhline(y=np.sum(maskGM_), color='r')
             plt.axhline(y=np.sum(maskGM_)+np.sum(maskWM_), color='b')
 
@@ -1727,18 +1741,8 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
         t = time()
         score = computeFD()
         
-        if not config.isCifti:
-            # load masks
-            maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
-
-            # original volume
-            X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
-            X = stats.zscore(X, axis=1, ddof=1)
-            Xgm  = X[maskGM_,:]
-            Xwm  = X[maskWM_,:]
-            Xcsf = X[maskCSF_,:]
-        else:
-            # cifti
+        # original volume
+        if config.isCifti:
             tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
             if not op.isfile(tsvFile):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,tsvFile)
@@ -1746,6 +1750,19 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             Xgm = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
             nTRs = Xgm.shape[1]
             Xgm = stats.zscore(Xgm, axis=1, ddof=1)
+        elif config.isGifti:
+            giiData = nib.load(config.fmriFile)
+            Xgm = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+            nTRs = Xgm.shape[1]
+            Xgm = stats.zscore(Xgm, axis=1, ddof=1)
+        else:
+            # load masks
+            maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
+            X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
+            X = stats.zscore(X, axis=1, ddof=1)
+            Xgm  = X[maskGM_,:]
+            Xwm  = X[maskWM_,:]
+            Xcsf = X[maskCSF_,:]
 
         fig = plt.figure(figsize=(15,20))
         ax1 = plt.subplot(311)
@@ -1754,26 +1771,19 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
         plt.ylabel('FD (mm)')
 
         ax2 = plt.subplot(312, sharex=ax1)
-        if not config.isCifti:
+        if not config.isCifti and not config.isGifti:
             im = plt.imshow(np.vstack((Xgm,Xwm,Xcsf)), aspect='auto', interpolation='none', cmap=plt.cm.gray)
         else:
             im = plt.imshow(Xgm, aspect='auto', interpolation='none', cmap=plt.cm.gray)
         im.set_clim(vmin=-3, vmax=3)
         plt.title('Before denoising')
         plt.ylabel('Voxels')
-        if not config.isCifti:
+        if not config.isCifti and not config.isGifti:
             plt.axhline(y=np.sum(maskGM_), color='r')
             plt.axhline(y=np.sum(maskGM_)+np.sum(maskWM_), color='b')
 
         # denoised volume
-        if not config.isCifti:
-            X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
-            X = stats.zscore(X, axis=1, ddof=1)
-            Xgm  = X[maskGM_,:]
-            Xwm  = X[maskWM_,:]
-            Xcsf = X[maskCSF_,:]
-        else:
-            # cifti
+        if config.isCifti:
             tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
             if not op.isfile(tsvFile):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
@@ -1781,16 +1791,27 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             Xgm = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
             nTRs = Xgm.shape[1]
             Xgm = stats.zscore(Xgm, axis=1, ddof=1)
+        elif config.isGifti:
+            giiData = nib.load(config.fmriFile_dn)
+            Xgm = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+            nTRs = Xgm.shape[1]
+            Xgm = stats.zscore(Xgm, axis=1, ddof=1)
+        else:
+            X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
+            X = stats.zscore(X, axis=1, ddof=1)
+            Xgm  = X[maskGM_,:]
+            Xwm  = X[maskWM_,:]
+            Xcsf = X[maskCSF_,:]
 
         ax3 = plt.subplot(313, sharex=ax1)
-        if not config.isCifti:
+        if not config.isCifti and not config.isGifti:
             im = plt.imshow(np.vstack((Xgm,Xwm,Xcsf)), aspect='auto', interpolation='none', cmap=plt.cm.gray)
         else:
             im = plt.imshow(Xgm, aspect='auto', interpolation='none', cmap=plt.cm.gray)
         im.set_clim(vmin=-3, vmax=3)
         plt.title('After denoising')
         plt.ylabel('Voxels')
-        if not config.isCifti:
+        if not config.isCifti and not config.isGifti:
             plt.axhline(y=np.sum(maskGM_), color='r')
             plt.axhline(y=np.sum(maskGM_)+np.sum(maskWM_), color='b')
 
@@ -1827,19 +1848,22 @@ def parcellate(overwrite=False):
     #####################
     # read parcels
     #####################
-    if not config.isCifti:
+    if config.isCifti:
+        if not op.isfile(config.parcellationFile.replace('.dlabel.nii','.tsv')):    
+            cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.parcellationFile,
+                                                                   config.parcellationFile.replace('.dlabel.nii','.tsv'))
+            call(cmd, shell=True)
+        allparcels = np.loadtxt(config.parcellationFile.replace('.dlabel.nii','.tsv'))
+    elif config.isGifti:
+        giiParcels = nib.load(config.parcellationFile)
+        allparcels = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+    else:
         maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
         if not config.maskParcelswithAll:     
             maskAll  = np.ones(np.shape(maskAll), dtype=bool)
         allparcels, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.parcellationFile, maskAll)
         if config.maskParcelswithGM:
             allparcels[np.logical_not(maskGM_)] = 0;
-    else:
-        if not op.isfile(config.parcellationFile.replace('.dlabel.nii','.tsv')):    
-            cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.parcellationFile,
-                                                                   config.parcellationFile.replace('.dlabel.nii','.tsv'))
-            call(cmd, shell=True)
-        allparcels = np.loadtxt(config.parcellationFile.replace('.dlabel.nii','.tsv'))
     
     ####################
     # original data
@@ -1847,14 +1871,17 @@ def parcellate(overwrite=False):
     alltsFile = op.join(tsDir,'allParcels.txt')
     if not op.isfile(alltsFile) or overwrite:
         # read original volume
-        if not config.isCifti:
-            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
-        else:
+        if config.isCifti:
             tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
             if not op.isfile(tsvFile):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,tsvFile)
                 call(cmd, shell=True)
             data = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
+        elif config.isGifti:
+            giiData = nib.load(config.fmriFile)
+            data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+        else:
+            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
         
         for iParcel in np.arange(config.nParcels):
             tsFile = op.join(tsDir,'parcel{:03d}.txt'.format(iParcel+1))
@@ -1872,14 +1899,17 @@ def parcellate(overwrite=False):
     alltsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
     if (not op.isfile(alltsFile)) or overwrite:
         # read denoised volume
-        if not config.isCifti:
-            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
-        else:
+        if config.isCifti:
             if not op.isfile(config.fmriFile_dn.replace('.dtseries.nii','.tsv')):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,
                                                                            config.fmriFile_dn.replace('.dtseries.nii','.tsv'))
                 call(cmd, shell=True)
             data = pd.read_csv(config.fmriFile_dn.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
+        elif config.isGifti:
+            giiData = nib.load(config.fmriFile_dn)
+            data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+        else:
+            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
                    
         for iParcel in np.arange(config.nParcels):
             tsFile = op.join(tsDir,'parcel{:03d}_{}.txt'.format(iParcel+1,rstring))
@@ -1913,7 +1943,7 @@ def parcellate(overwrite=False):
 #  @param [bool] mergeSessions True if time series from different sessions should be merged before computing FC, otherwise FC from each session are averaged
 #  @param [bool] mergeRuns True if time series from different runs should be merged before computing FC, otherwise FC from each run are averaged (if mergeSessions is True mergeRuns is ignored and everything is concatenated)
 #  @param [CovarianceEstimator] cov_estimator is None, default sklearn.covariance.LedoitWolf estimator is used
-def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,outputDir=None,isCifti=False,fcMatFile='fcMats.mat',
+def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,outputDir=None,isCifti=False,isGifti=False,fcMatFile='fcMats.mat',
              kind='correlation',overwrite=True,FCDir=None,mergeSessions=True,mergeRuns=False,cov_estimator=None):
     if (not op.isfile(fcMatFile)) or overwrite:
         if cov_estimator is None:
@@ -1925,6 +1955,8 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
         discard_diagonal=True)
         if isCifti:
             ext = '.dtseries.nii'
+        if isGifti:
+            ext = '.func.gii'
         else:
             ext = '.nii.gz'
 
@@ -1949,7 +1981,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                                 else:
                                     inputFile = op.join(buildpath(), prefix+config.fmriRun+ext)
                             outputPath = outpath() if outputDir is None else outputDir
-                            preproFile = retrieve_preprocessed(inputFile, operations, outputPath, isCifti)
+                            preproFile = retrieve_preprocessed(inputFile, operations, outputPath, isCifti, isGifti)
                             if preproFile:
                                 # retrieve time courses of parcels
                                 prefix = config.session+'_'
@@ -1987,7 +2019,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                             else:
                                 inputFile = op.join(buildpath(), config.fmriRun+ext)
                         outputPath = outpath() if (outputDir is None) else outputDir
-                        preproFile = retrieve_preprocessed(inputFile, operations, outputPath, isCifti)
+                        preproFile = retrieve_preprocessed(inputFile, operations, outputPath, isCifti, isGifti)
                         if preproFile:
                             # retrieve time courses of parcels
                             tsDir     = op.join(outpath(),config.parcellationName,config.fmriRun+ext)
@@ -2469,7 +2501,7 @@ def runPipeline():
     sortedOperations = config.sortedOperations
     
     timeStart = localtime()
-    if config.preprocessing != 'surface':
+    if not config.isGifti:
         print('Step 0 : Building WM, CSF and GM masks...')
         masks = makeTissueMasks(overwrite=config.overwrite)
         maskAll, maskWM_, maskCSF_, maskGM_ = masks    
@@ -2488,6 +2520,14 @@ def runPipeline():
             cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,config.fmriFile.replace('.dtseries.nii','.tsv'))
             call(cmd,shell=True)
         data = pd.read_csv(config.fmriFile.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
+    elif config.isGifti:
+        giiData = nib.load(config.fmriFile)
+        data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+        volData = None # TODO: CHECK
+        nTRs = data.shape[1]
+        nRows, nCols, nSlices, affine, header = None, None, None, None, None
+        TR = float(giiData.darrays[0].metadata['TimeStep'])/1000
+        print('TR =',TR)
     else:
         volFile = config.fmriFile
         print('Loading [volume] data in memory... {}'.format(config.fmriFile))
@@ -2549,6 +2589,10 @@ def runPipeline():
                                                                      config.fmriFile,
                                                                      op.join(outDir,outFile+'.dtseries.nii'))
         call(cmd,shell=True)
+    elif config.isGifti:
+        giiData = nib.load(config.fmriFile)
+        giiData.darrays = [nib.gifti.GiftiDataArray(data[:,index]) for index in range(data.shape[1])]
+        nib.save(giiData, op.join(outDir,outFile+'.func.gii'))
     else:
         niiImg = np.zeros((nRows*nCols*nSlices, nTRs),dtype=np.float32)
         niiImg[maskAll,:] = data
@@ -2576,6 +2620,8 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         priority=-100
     if config.isCifti:
         config.ext = '.dtseries.nii'
+    elif config.isGifti:
+        config.ext = '.func.gii'
     else:
         config.ext = '.nii.gz'
 
@@ -2631,7 +2677,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
                 config.steps[cstep].append(opr[0])
                 config.Flavors[cstep].append(opr[2])
             prev_step = opr[1]                
-    precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath(),config.isCifti) 
+    precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath(),config.isCifti,config.isGifti) 
 
     if precomputed and not config.overwrite:
         config.fmriFile_dn = precomputed
@@ -2676,6 +2722,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         thispythonfn += 'config.queue            = {}\n'.format(config.queue)
         thispythonfn += 'config.preWhitening     = {}\n'.format(config.preWhitening)
         thispythonfn += 'config.isCifti          = {}\n'.format(config.isCifti)
+        thispythonfn += 'config.isGifti          = {}\n'.format(config.isGifti)
         thispythonfn += 'config.Operations       = {}\n'.format(config.Operations)
         thispythonfn += 'config.ext              = "{}"\n'.format(config.ext)
         thispythonfn += 'config.fmriFile         = "{}"\n'.format(config.fmriFile)
