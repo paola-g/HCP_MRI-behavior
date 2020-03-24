@@ -23,12 +23,13 @@ class config(object):
     outDir             = 'rsDenoise'								
     FCDir              = 'FC'
     headradius         = 50 #50mm as in Powers et al. 2012
+    interpolation      = 'linear'
     melodicFolder      = op.join('#fMRIrun#_hp2000.ica','filtered_func_data.ica') #the code #fMRIrun# will be replaced
     plotSteps          = False # produce a grayplot after each processing step
+    isCifti            = False
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
-
 
 #----------------------------------
 # IMPORTS
@@ -80,8 +81,8 @@ from nistats import design_matrix
 # function to build dinamycally path to input fMRI file
 #----------------------------------
 def buildpath():
-    #return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
-    return config.DATADIR
+    return op.join(config.DATADIR, config.subject,'MNINonLinear','Results',config.fmriRun)
+    #return config.DATADIR
 #----------------------------------
 # function to build dinamycally output path (BIDS-like) 
 #----------------------------------
@@ -584,8 +585,8 @@ def fnSubmitJobArrayFromJobList():
         f.write('#$ {}\n'.format(config.sgeopts))
         f.write('SCRIPT=$(awk "NR==$SGE_TASK_ID" {})\n'.format(op.join('tmp{}'.format(config.tStamp),'scriptlist')))
         f.write('bash $SCRIPT\n')
-    #strCommand = 'cd {};qsub {}'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
-    strCommand = 'ssh csclprd3s1 "cd {};qsub {}"'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
+    strCommand = 'cd {};qsub {}'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
+    #strCommand = 'ssh csclprd3s1 "cd {};qsub {}"'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
     # write down the command to a file in the job folder
     with open(op.join('tmp{}'.format(config.tStamp),'cmd'),'w+') as f:
         f.write(strCommand+'\n')
@@ -1083,6 +1084,72 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
             intpts = np.interp(censored,tpoints,cens_tseries)
             tseries[censored] = intpts
             data[i,:] = tseries
+        elif method=='power':
+            # as in Power et. al 2014 a frequency transform is used to generate data with
+            # the same phase and spectral characteristics as the unflagged data
+            N = len(tpoints) # no. of time points
+            T = (tpoints.max() - tpoints.min())*TR # total time span
+            ofac = 8 # oversampling frequency (generally >=4)
+            hifac = 1 # highest frequency allowed.  hifac = 1 means 1*nyquist limit
+
+            # compute sampling frequencies
+            f = np.arange(1/(T*ofac),hifac*N/(2*T)+1/(T*ofac),1/(T*ofac))
+            # angular frequencies and constant offsets
+            w = 2*np.pi*f
+            w = w[:,np.newaxis]
+            t = TR*tpoints[:,np.newaxis].T
+            tau = np.arctan2(np.sum(np.sin(2*w*(t+1)),1),np.sum(np.cos(2*w*(t+1)),1))/(2*np.squeeze(w))
+
+            # spectral power sin and cosine terms
+            sterm = np.sin(w*(t+1) - (np.squeeze(w)*tau)[:,np.newaxis])
+            cterm = np.cos(w*(t+1) - (np.squeeze(w)*tau)[:,np.newaxis])
+
+            mean_ct = cens_tseries.mean()
+            D = cens_tseries - mean_ct
+
+            c = np.sum(cterm * D,1) / np.sum(np.power(cterm,2),1)
+            s = np.sum(sterm * D,1) / np.sum(np.power(sterm,2),1)
+
+            # The inverse function to re-construct the original time series
+            full_tpoints = (np.arange(nTRs)[:,np.newaxis]+1).T*TR
+            prod = full_tpoints*w
+            sin_t = np.sin(prod)
+            cos_t = np.cos(prod)
+            sw_p = sin_t*s[:,np.newaxis]
+            cw_p = cos_t*c[:,np.newaxis]
+            S = np.sum(sw_p,axis=0)
+            C = np.sum(cw_p,axis=0)
+            H = C + S
+
+            # Normalize the reconstructed spectrum, needed when ofac > 1
+            Std_H = np.std(H, ddof=1)
+            Std_h = np.std(cens_tseries,ddof=1)
+            norm_fac = Std_H/Std_h
+            H = H/norm_fac
+            H = H + mean_ct
+
+            intpts = H[censored]
+            tseries[censored] = intpts
+            data[i,:] = tseries
+        elif method == 'astropy':
+            lombs = LombScargle(tpoints*TR, cens_tseries)
+            frequency, power = lombs.autopower(normalization='standard', samples_per_peak=8, nyquist_factor=1, method='fast')
+            pwsort = np.argsort(power)
+            frequency = frequency[pwsort[-100:]]
+            mean_ct = np.mean(cens_tseries)
+            for f in np.arange(len(frequency)):
+                if f == 0:
+                    y_all = lombs.model(censored*TR, frequency[f])
+                else:
+                    y_all = y_all + lombs.model(censored*TR, frequency[f])
+            y_all = y_all - mean_ct*len(frequency)
+            Std_y = np.std(y_all, ddof=1)
+            Std_h = np.std(cens_tseries,ddof=1)
+            norm_fac = Std_y/Std_h
+            y_final = y_all/norm_fac
+            intpts = y_final + np.mean(cens_tseries)
+            tseries[censored] = intpts
+            data[i,:] = tseries
         else:
             print("Wrong interpolation method: nothing was done")
             break
@@ -1153,6 +1220,138 @@ def dctmtx(N):
     for k in range(1,K):
         C[:,k] = np.sqrt(2/N)*np.cos([np.pi*x*(k-1)/(2*N) for x in doublen])        
     return C 
+
+def distcorr(X, Y):
+    """ Compute the distance correlation function
+    
+    >>> a = [1,2,3,4,5]
+    >>> b = np.array([1,2,9,4,4])
+    >>> distcorr(a, b)
+    0.762676242417
+    """
+    X = np.atleast_1d(X)
+    Y = np.atleast_1d(Y)
+    if np.prod(X.shape) == len(X):
+        X = X[:, None]
+    if np.prod(Y.shape) == len(Y):
+        Y = Y[:, None]
+    X = np.atleast_2d(X)
+    Y = np.atleast_2d(Y)
+    n = X.shape[0]
+    if Y.shape[0] != X.shape[0]:
+        raise ValueError('Number of samples must match')
+    a = squareform(pdist(X))
+    b = squareform(pdist(Y))
+    A = a - a.mean(axis=0)[None, :] - a.mean(axis=1)[:, None] + a.mean()
+    B = b - b.mean(axis=0)[None, :] - b.mean(axis=1)[:, None] + b.mean()
+    
+    dcov2_xy = (A * B).sum()/float(n * n)
+    dcov2_xx = (A * A).sum()/float(n * n)
+    dcov2_yy = (B * B).sum()/float(n * n)
+    dcor = np.sqrt(dcov2_xy)/np.sqrt(np.sqrt(dcov2_xx) * np.sqrt(dcov2_yy))
+    return dcor
+
+# the function parcellate() will save a time series per each voxel if config.save_voxelwise = True
+def compute_mFC(tsDir, rstring, overwrite=False):
+    parcelData = []
+    for iParcel in np.arange(config.nParcels):
+        tsFileAll = op.join(tsDir,'parcel{:03d}_{}_all.txt'.format(iParcel+1,rstring))
+        if not op.isfile(tsFileAll) or overwrite:
+            parcelData.append(np.transpose(data[np.where(allparcels==iParcel+1)[0],:]))
+        else:
+            parcelData.append(np.loadtxt(tsFileAll,delimiter=','))
+        mFC = np.zeros([config.nParcels, config.nParcels])
+    for iParcel in np.arange(config.nParcels):
+        for jParcel in np.arange(config.nParcels):
+            if iParcel>jParcel:
+                mFC[iParcel,jParcel] = distcorr(parcelData[iParcel],parcelData[jParcel])
+                mFC[jParcel,iParcel] = mFC[iParcel,jParcel]
+    return mFC
+
+# Input
+#
+# 'TS' : original time course encoded in a matrix of size (T=number of time points,k=number of variables/ROIs)
+# 'p'  : order of the AR model to be identified
+#
+# Given these inputs, the AR model of order 'p' reads:
+#
+# TS(t,:)' = w + \sum_i=1^p A_i * TS(t-i,:)' + e(t),     Eq. (1)
+#
+# where: w    is an intercept vector of size (T,1). It is supposed to be
+#             zero if timecourses are centered.
+#        A_i  are matrices of size k*k linking T(t,:) and T(t-i,:).
+#        e(t) is an error vector of size (T,1) following a centered multivariate gaussian distribution
+#
+# Eq. (1) can be written for all t \in [p+1...T]. Concatenating these
+# (T-p) equations yields the following matrix form:
+#
+# Y = B*Z+E,    Eq. (2)
+#
+# where: Y = [TS(p+1,:)' TS(p+2,:)' ... TS(T,:)'] is a matrix of size (k,T-p)
+#
+#        B = [w A_1 ... A_p] is a matrix of size (k,k*p+1) that
+#        gathers unknown parameters of the model
+#
+#            |    1             1           ...        1     |
+#            | TS(p,:)'     TS(p+1,:)'      ...    TS(T-1,:)'|
+#            |TS(p-1,:)'     TS(p,:)'       ...    TS(T-2,:)'|
+#        Z = |    .             .          .           .     |
+#            |    .             .            .         .     |
+#            |    .             .              .       .     |
+#            | TS(1,:)'      TS(2,:)'       ...    TS(T-p,:)'|
+#
+#        is a matrix of size (k*p+1,T-p) that is directly built from the input TS.
+#
+#        E = [e(p+1) e(p+2) ... e(T)] is a matrix of size (k,T-p)
+#        containing the residuals of the multivariate AR model.
+#
+# Output
+#
+# 'Y'             Matrix variables directly built from TS (see Eq. (2))
+# 'B'             Matrix containing AR model parameters
+# 'Z'             Matrix variables directly built from TS (see Eq. (2))
+# 'E'             Residuals of the AR model
+def ar_mls(TS,p):
+    T = TS.shape[0]
+    k = TS.shape[1]
+    Z = np.zeros([k*p+1,T-p])
+    Y = TS[p:,:].T
+    Z[0,:] = 1
+    for j in range(p):
+        Z[j*k+1 : (j+1)*k+1, :] = TS[p-(j+1):T-(j+1), :].T
+
+    B = linalg.lstsq(np.dot(Z,Z.T).T, np.dot(Y,Z.T).T)[0].T
+    E   = Y-np.dot(B,Z)
+    return [Y,B,Z,E]
+
+def AR1_FC(alltc):
+    n_subj = len(alltc)
+    n_rois = alltc[0].shape[1]
+    fcMats = np.zeros([n_subj, n_rois*n_rois])
+    for i in range(n_subj):
+        [_,B,_,_] = ar_mls(alltc[i],1)
+        fcMats[i,:] = B[:,1:].reshape(-1)
+    return fcMats
+
+def within_sub_edge_var(alltc, measure, sample_size = 0.1, n_rep = 10):
+    n_subjects = len(alltc)
+    n_rois = alltc[0].shape[1]
+    var_edges = np.zeros((n_subjects, int(n_rois*(n_rois-1)/2)))
+    for i in range(n_subjects):
+        n_timepoints = alltc[i].shape[0]
+        sample_timepoints = np.array([random.sample(range(n_timepoints),int(np.round(n_timepoints*sample_size))) for i in range(n_rep)])
+        sample_tc = [alltc[i][sample_timepoints]]
+        FCsamples = measure.fit_transform([alltc[i][sample_timepoints[j,:],:] for j in range(n_rep)])
+        var_edges[i,:] = np.var(FCsamples,axis=0,ddof=1)
+    return np.mean(var_edges,axis=0)
+
+def between_sub_edge_var(fcMats):
+    return np.var(fcMats, axis=0, ddof=1)
+
+def rank_variance_ratio(between, within):
+    ratio = between/within    
+    sorted_idx = np.argsort(ratio)
+    return sorted_idx[::-1]
 
 # ---------------------
 # Pipeline Operations
@@ -1383,8 +1582,8 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     for i in range(len(censored)):
         if censored[i] > 0 and censored[i] < 5:
             toAppend = np.union1d(toAppend,np.arange(0,censored[i]))
-        elif censored[i] > 1200 - 5:
-            toAppend = np.union1d(toAppend,np.arange(censored[i]+1,1200))
+        elif censored[i] > nTRs - 5:
+            toAppend = np.union1d(toAppend,np.arange(censored[i]+1,nTRs))
         elif i<len(censored) - 1:
             gap = censored[i+1] - censored[i] 
             if gap > 1 and gap <= 5:
@@ -1508,7 +1707,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
             return niiImg[0],niiImg[1]     
-        niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y.T, config.preWhitening)
+        niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
         volData[np.logical_or(maskWM_,maskCSF_),:] = niiImgWMCSF
     elif flavor[2] == 'GM':
         if config.isCifti:
@@ -1527,7 +1726,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
             return niiImg[0],niiImg[1]     
-        niiImgGM = regress(niiImgGM, nTRs, TR, y.T, config.preWhitening)
+        niiImgGM = regress(niiImgGM, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
         if config.isCifti:
             niiImg[0] = niiImgGM
         else:
@@ -1564,9 +1763,9 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
         censored = np.atleast_1d(censored)
         if len(censored)<nTRs and len(censored) > 0:
-            data = interpolate(niiImg[0],censored,TR,nTRs,method='linear')     
+            data = interpolate(niiImg[0],censored,TR,nTRs,method=config.interpolation)     
             if niiImg[1] is not None:
-                data2 = interpolate(niiImg[1],censored,TR,nTRs,method='linear')
+                data2 = interpolate(niiImg[1],censored,TR,nTRs,method=config.interpolation)
         else:
             data = niiImg[0]
             if niiImg[1] is not None:
@@ -1577,12 +1776,31 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
             data2 = niiImg[1]
 
     if flavor[0] == 'Butter':
-        niiImg[0] = clean(data.T, detrend=False, standardize=False, 
-                              t_r=TR, high_pass=flavor[1], low_pass=flavor[2]).T
+        R = 0.1
+        Nr = 50
+        x = data.T
+        N = x.shape[0]
+        NR = min(round(N*R),Nr)
+        x1 = np.zeros((NR, x.shape[1]))
+        x2 = np.zeros((NR, x.shape[1]))
+        for i in range(x.shape[1]):
+            x1[:,i] = 2*x[0,i] - np.flipud(x[1:NR+1,i])
+            x2[:,i] = 2*x[-1,i] - np.flipud(x[-NR-1:-1,i])
+        x = np.vstack([x1,x,x2])
+        x = clean(x, detrend=False, standardize=False, 
+                              t_r=TR, high_pass=flavor[1], low_pass=flavor[2])
+        niiImg[0] = x[NR:-NR,:].T
         if niiImg[1] is not None:
-            niiImg[1] = clean(data2.T, detrend=False, standardize=False, 
-               t_r=TR, high_pass=flavor[1], low_pass=flavor[2]).T
-            
+            x = data2.T
+            x1 = np.zeros((NR, x.shape[1]))
+            x2 = np.zeros((NR, x.shape[1]))
+            for i in range(x.shape[2]):
+                x1[:,i] = 2*x[0,i] - np.flipud(x[1:NR+1,i])
+                x2[:,i] = 2*x[-1,i] - np.flipud(x[-NR-1:-1,i])
+            x = np.vstack([x1,x,x2])
+            x = clean(data2.T, detrend=False, standardize=False, 
+               t_r=TR, high_pass=flavor[1], low_pass=flavor[2])
+            niiImg[1] = x[NR:-NR,:].T
     elif flavor[0] == 'Gaussian':
         w = signal.gaussian(11,std=flavor[1])
         niiImg[0] = signal.lfilter(w,1,data)
@@ -1930,9 +2148,9 @@ def parcellate(overwrite=False):
 #  @param [str] outputDir path to preprocessed data folder (optional, default is outpath())
 #  @param [bool] isCifti True if preprocessed data is in cifti format
 #  @param [str] fcMatFile full path to output file (default ./fcMats.mat)
-#  @param [str] kind type of FC, one of {“correlation”, “partial correlation”, “tangent”, “covariance”, “precision”}
+#  @param [str] kind type of FC, one of {"correlation", "partial correlation", "tangent", "covariance", "precision"}
 #  @param [bool] overwrite True if existing files should be overwritten
-#  @param [str] path to folder containing precomputed timeseries x parcels per subject - if None they are retrieved from each subject's folder
+#  @param [str] FCDir path to folder containing precomputed timeseries x parcels per subject - if None they are retrieved from each subject's folder
 #  @param [bool] mergeSessions True if time series from different sessions should be merged before computing FC, otherwise FC from each session are averaged
 #  @param [bool] mergeRuns True if time series from different runs should be merged before computing FC, otherwise FC from each run are averaged (if mergeSessions is True mergeRuns is ignored and everything is concatenated)
 #  
@@ -2372,7 +2590,7 @@ def runPredictionJD(fcMatFile, dataFile, test_index, filterThr=0.01, keepEdgeFil
             nCV_gridsearch = 3
             param_grid={"alpha": [1e0, 0.1, 1e-2, 1e-3]}
 
-            kr = GridSearchCV(KernelRidge(kernel='precomputed'), cv=StratifiedKFold(n_splits=nCV_gridsearch).split(X_train, bins_cv), param_grid=param_grid)
+            kr = GridSearchCV(KernelRidge(kernel='precomputed'), cv=cross_validation.StratifiedKFold(n_splits=nCV_gridsearch).split(X_train, bins_cv), param_grid=param_grid)
             
             # TRAIN
             start_time     = time()
@@ -2600,7 +2818,7 @@ def runPipeline():
 #  @param [bool] overwriteFC True if existing FC matrix files should be overwritten 
 #  @param [bool] cleanup True if old files should be removed
 #  
-def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
+def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGrayPlot=False,do_plotFC=False):
     if config.queue: 
         priority=-100
     config.suffix = '_hp2000_clean' if config.useFIX else '' 
@@ -2664,15 +2882,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
     precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath(),config.isCifti) 
 
     if precomputed and not config.overwrite:
-        do_makeGrayPlot    = False
-        do_plotFC          = False
         config.fmriFile_dn = precomputed
-        if not op.isfile(config.fmriFile_dn.replace(config.ext,'_grayplot.png')):
-            do_makeGrayPlot = True
-        if not op.isfile(config.fmriFile_dn.replace(config.ext,'_'+config.parcellationName+'_fcMat.png')):
-            do_plotFC = True
-        if overwriteFC:
-            do_plotFC = True
         if (not do_plotFC) and (not do_makeGrayPlot):
             return True
     else:
@@ -2687,8 +2897,6 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True):
                 remove(op.join(outpath(),get_rcode(precomputed)+'.xml'))
             except OSError:
                 pass
-        do_makeGrayPlot = True
-        do_plotFC       = True
 
     if config.queue or launchSubproc:
         jobDir = op.join(config.outDir,'jobs')
