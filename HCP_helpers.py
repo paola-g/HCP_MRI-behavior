@@ -1,4 +1,5 @@
 import os.path as op
+from os import mkdir, makedirs, getcwd, remove, listdir, environ
 #----------------------------------
 # initialize global variable config
 #----------------------------------
@@ -27,6 +28,7 @@ class config(object):
     melodicFolder      = op.join('#fMRIrun#_hp2000.ica','filtered_func_data.ica') #the code #fMRIrun# will be replaced
     plotSteps          = False # produce a grayplot after each processing step
     isCifti            = False
+    sourceDir          = getcwd()
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -41,7 +43,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 import pandas as pd
-from os import mkdir, makedirs, getcwd, remove, listdir, environ
 import sys
 import numpy as np
 from numpy.polynomial.legendre import Legendre
@@ -278,7 +279,7 @@ def regress(data, nTRs, TR, regressors, preWhitening=False):
     X  = np.concatenate((np.ones([nTRs,1]), regressors), axis=1)
     N = data.shape[0]
     start_time = time()
-    fit = np.linalg.lstsq(X, data.T)[0]
+    fit = np.linalg.lstsq(X, data.T, rcond=None)[0]
     fittedvalues = np.dot(X, fit)
     resid = data - fittedvalues.T
     data = resid
@@ -564,6 +565,57 @@ def timestamp():
    milliseconds = '%03d' % int((now - int(now)) * 1000)
    return strftime('%Y%m%d%H%M%S', loctime) + milliseconds
 
+def prepareJobArrayFromJobList():
+    config.tStamp = timestamp()
+    # make directory
+    mkdir('tmp{}'.format(config.tStamp))
+    # write a temporary file with the list of scripts to execute as an array job
+    with open(op.join('tmp{}'.format(config.tStamp),'scriptlist'),'w') as f:
+        f.write('\n'.join(config.scriptlist))
+    # write the .qsub file
+    with open(op.join('tmp{}'.format(config.tStamp),'qsub'),'w') as f:
+        f.write('#!/bin/bash\n')
+        f.write('#$ -S /bin/bash\n')
+        f.write('#$ -t 1-{}\n'.format(len(config.scriptlist)))
+        f.write('#$ -cwd -V -N tmp{}\n'.format(config.tStamp))
+        f.write('#$ -e {}\n'.format(op.join('tmp{}'.format(config.tStamp),'err')))
+        f.write('#$ -o {}\n'.format(op.join('tmp{}'.format(config.tStamp),'out')))
+        f.write('#$ {}\n'.format(config.sgeopts))
+        f.write('SCRIPT=$(awk "NR==$SGE_TASK_ID" {})\n'.format(op.join('tmp{}'.format(config.tStamp),'scriptlist')))
+        f.write('bash $SCRIPT\n')
+    strCommand = 'qsub {}'.format(op.join('tmp{}'.format(config.tStamp),'qsub'))
+    # write down the command to a file in the job folder
+    with open('cmd','w+') as f:
+        f.write(strCommand+'\n')
+    
+    config.scriptlist = []
+    return
+
+## 
+#  @brief Submit jobs with sge qsub
+#      
+def fnSubmitToCluster(strScript, strJobFolder, strJobUID, resources='-l mem_free=25G -pe openmp 6', specifyqueue='long.q'):
+    # clean up .o and .e
+    tmpfname = op.join(strJobFolder,strJobUID)
+    try: 
+        remove(tmpfname+'.e')
+    except OSError: 
+        pass
+    try: 
+        remove(tmpfname+'.o')  
+    except OSError: 
+        pass    
+   
+    strCommand = 'qsub {} -cwd -V {} -N {} -e {} -o {} {}'.format(specifyqueue,resources,strJobUID,
+                      op.join(strJobFolder,strJobUID+'.e'), op.join(strJobFolder,strJobUID+'.o'), strScript)
+    # write down the command to a file in the job folder
+    with open(op.join(strJobFolder,strJobUID+'.cmd'),'w+') as hFileID:
+        hFileID.write(strCommand+'\n')
+    # execute the command
+    cmdOut = check_output(strCommand, shell=True)
+    return cmdOut.split()[2]    
+
+
 ## 
 #  @brief Submit array of jobs with sge qsub (needs to be customized)
 #  
@@ -576,7 +628,7 @@ def fnSubmitJobArrayFromJobList():
         f.write('\n'.join(config.scriptlist))
     # write the .qsub file
     with open(op.join('tmp{}'.format(config.tStamp),'qsub'),'w') as f:
-        f.write('#!/bin/sh\n')
+        f.write('#!/bin/bash\n')
         f.write('#$ -S /bin/bash\n')
         f.write('#$ -t 1-{}\n'.format(len(config.scriptlist)))
         f.write('#$ -cwd -V -N tmp{}\n'.format(config.tStamp))
@@ -585,21 +637,21 @@ def fnSubmitJobArrayFromJobList():
         f.write('#$ {}\n'.format(config.sgeopts))
         f.write('SCRIPT=$(awk "NR==$SGE_TASK_ID" {})\n'.format(op.join('tmp{}'.format(config.tStamp),'scriptlist')))
         f.write('bash $SCRIPT\n')
-    strCommand = 'cd {};qsub {}'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
+    strCommand = 'qsub {}'.format(op.join('tmp{}'.format(config.tStamp),'qsub'))
     #strCommand = 'ssh csclprd3s1 "cd {};qsub {}"'.format(getcwd(),op.join('tmp{}'.format(config.tStamp),'qsub'))
     # write down the command to a file in the job folder
     with open(op.join('tmp{}'.format(config.tStamp),'cmd'),'w+') as f:
         f.write(strCommand+'\n')
     # execute the command
     cmdOut = check_output(strCommand, shell=True)
+    
     config.scriptlist = []
     return cmdOut.split()[2]    
 
 ## 
 #  @brief Submit jobs with sge qsub
 #      
-def fnSubmitToCluster(strScript, strJobFolder, strJobUID, resources):
-    specifyqueue = ''
+def fnSubmitToCluster(strScript, strJobFolder, strJobUID, resources='-l mem_free=25G -pe openmp 6', specifyqueue='long.q'):
     # clean up .o and .e
     tmpfname = op.join(strJobFolder,strJobUID)
     try: 
@@ -1707,7 +1759,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
             return niiImg[0],niiImg[1]     
-        niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
+        niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y[1:flavor[1],:].T, config.preWhitening)
         volData[np.logical_or(maskWM_,maskCSF_),:] = niiImgWMCSF
     elif flavor[2] == 'GM':
         if config.isCifti:
@@ -1726,7 +1778,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
             return niiImg[0],niiImg[1]     
-        niiImgGM = regress(niiImgGM, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
+        niiImgGM = regress(niiImgGM, nTRs, TR, y[1:flavor[1],:].T, config.preWhitening)
         if config.isCifti:
             niiImg[0] = niiImgGM
         else:
@@ -2651,7 +2703,7 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
             mkdir(jobDir)
         jobName = 'f{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(el,config.pipelineName,config.parcellationName,SM, model,config.release,session,decon,fctype)
         # make a script
-        thispythonfn  = '<< END\nimport sys\nsys.path.insert(0,"{}")\n'.format(getcwd())
+        thispythonfn  = '<< END\nimport sys\nsys.path.insert(0,"{}")\n'.format(config.sourceDir)
         thispythonfn += 'from HCP_helpers import *\n'
         thispythonfn += 'logFid                  = open("{}","a+")\n'.format(op.join(jobDir,jobName+'.log'))
         thispythonfn += 'sys.stdout              = logFid\n'
@@ -2661,6 +2713,7 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         thispythonfn += 'print(strftime("%Y-%m-%d %H:%M:%S", localtime()))\n'
         thispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
+        thispythonfn += 'config.outDir          = "{}"\n'.format(config.outDir)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
         thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
         #        thispythonfn += 'config.outScore         = "{}"\n'.format(config.outScore)
@@ -2704,12 +2757,12 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         else:
             runPredictionJD(fcMatFile,dataFile,test_index,filterThr=filterThr,keepEdgeFile=keepEdgeFile,SM=SM, session=session, decon=decon, fctype=fctype, model=model, outDir=outDir, confounds=confounds,iPerm=jPerm)
         iCV = iCV +1
-    
+
     if len(config.scriptlist)>0:
         # launch array job
         JobID = fnSubmitJobArrayFromJobList()
         config.joblist.append(JobID.split(b'.')[0])
-
+    
 ## 
 #  @brief Run preprocessing pipeline (output saved to file)
 #  
@@ -2905,7 +2958,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         jobName = 's{}_{}_{}_cifti{}_{}'.format(config.subject,config.fmriRun,config.pipelineName,config.isCifti,timestamp())
 
         # make a script
-        thispythonfn  = '<< END\nimport sys\nsys.path.insert(0,"{}")\n'.format(getcwd())
+        thispythonfn  = '<< END\nimport sys\nsys.path.insert(0,"{}")\n'.format(config.sourceDir)
         thispythonfn += 'from HCP_helpers import *\n'
         thispythonfn += 'logFid                  = open("{}","a+",1)\n'.format(op.join(jobDir,jobName+'.log'))
         thispythonfn += 'sys.stdout              = logFid\n'
@@ -2916,6 +2969,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         thispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.subject          = "{}"\n'.format(config.subject)
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
+        thispythonfn += 'config.outDir          = "{}"\n'.format(config.outDir)
         thispythonfn += 'config.fmriRun          = "{}"\n'.format(config.fmriRun)
         thispythonfn += 'config.useFIX           = {}\n'.format(config.useFIX)
         thispythonfn += 'config.useNative        = {}\n'.format(config.useNative)
@@ -3017,6 +3071,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
                         remove(f)
                     except OSError:
                         pass
+
     return True
 
 

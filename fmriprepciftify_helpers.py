@@ -2442,6 +2442,7 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         thispythonfn += 'print(strftime("%Y-%m-%d %H:%M:%S", localtime()))\n'
         thispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
+        thispythonfn += 'config.outDir          = "{}"\n'.format(config.outDir)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
         thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
         #        thispythonfn += 'config.outScore         = "{}"\n'.format(config.outScore)
@@ -2714,6 +2715,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         thispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.subject          = "{}"\n'.format(config.subject)
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
+        thispythonfn += 'config.outDir          = "{}"\n'.format(config.outDir)
         thispythonfn += 'config.fmriRun          = "{}"\n'.format(config.fmriRun)
         thispythonfn += 'config.useNative        = {}\n'.format(config.useNative)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
