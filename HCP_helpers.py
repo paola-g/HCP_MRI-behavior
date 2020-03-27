@@ -2205,6 +2205,7 @@ def parcellate(overwrite=False):
 #  @param [str] FCDir path to folder containing precomputed timeseries x parcels per subject - if None they are retrieved from each subject's folder
 #  @param [bool] mergeSessions True if time series from different sessions should be merged before computing FC, otherwise FC from each session are averaged
 #  @param [bool] mergeRuns True if time series from different runs should be merged before computing FC, otherwise FC from each run are averaged (if mergeSessions is True mergeRuns is ignored and everything is concatenated)
+#  @param [CovarianceEstimator] cov_estimator is None, default sklearn.covariance.LedoitWolf estimator is used
 #  
 def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,outputDir=None,isCifti=False,fcMatFile='fcMats.mat',
              kind='correlation',overwrite=True,FCDir=None,mergeSessions=True,mergeRuns=False,cov_estimator=None):
@@ -2721,7 +2722,7 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         thispythonfn += 'config.behavFile        = "{}"\n'.format(config.behavFile)
         thispythonfn += 'config.overwrite        = {}\n'.format(config.overwrite)
         thispythonfn += 'print("=========================")\n'
-        thispythonfn += 'print("runPredictionJD(\'{}\',\'{}\')")\n'.format(fcMatFile, dataFile)
+        thispythonfn += 'print("runPredictionJD(\'{}\',\'{}\'))"\n'.format(fcMatFile, dataFile)
         thispythonfn += 'print("=========================")\n'
         thispythonfn += 'print("=========================")\n'
         str1 =  '['+','.join(['%s' % test_ind for test_ind in test_index])+']'
