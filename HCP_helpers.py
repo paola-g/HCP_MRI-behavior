@@ -1978,7 +1978,7 @@ def stepPlot(X,operationName, displayPlot=False,overwrite=False):
             Xcsf = X[maskCSF_,:]
         else:
             # cifti
-            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            tsvFile = config.fmriFile_dn.replace('.dtseries.nii','.tsv')
             if not op.isfile(tsvFile):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
                 call(cmd,shell=True)
@@ -2029,9 +2029,9 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             Xcsf = X[maskCSF_,:]
         else:
             # cifti
-            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv')
             if not op.isfile(tsvFile):									  
-                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,config.fmriFile.replace('.dtseries.nii','.tsv'))
+                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,tsvFile)
                 call(cmd,shell=True)
             Xgm = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
             nTRs = Xgm.shape[1]
@@ -2064,7 +2064,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             Xcsf = X[maskCSF_,:]
         else:
             # cifti
-            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            tsvFile = config.fmriFile_dn.replace('.dtseries.nii','.tsv')
             if not op.isfile(tsvFile):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
                 call(cmd,shell=True)
@@ -2141,7 +2141,7 @@ def parcellate(overwrite=False):
         if not config.isCifti:
             data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
         else:
-            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv')
             if not op.isfile(tsvFile):									  
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,tsvFile)
                 call(cmd, shell=True)
@@ -2239,7 +2239,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                             else:
                                 prefix = config.session+'_'
                                 if isCifti:
-                                    inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+ext)
+                                    inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.suffix+ext)
                                 else:
                                     inputFile = op.join(buildpath(), prefix+config.fmriRun+ext)
                             outputPath = outpath() if outputDir is None else outputDir
@@ -2277,7 +2277,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                             inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
                         else:
                             if isCifti:
-                                inputFile = op.join(buildpath(), config.fmriRun+'_Atlas_'+config.smoothing+ext)
+                                inputFile = op.join(buildpath(), config.fmriRun+'_Atlas_'+config.suffix+ext)
                             else:
                                 inputFile = op.join(buildpath(), config.fmriRun+ext)
                         outputPath = outpath() if (outputDir is None) else outputDir
