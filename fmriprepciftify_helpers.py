@@ -1754,7 +1754,10 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             giiData = nib.load(config.fmriFile)
             Xgm = np.vstack([np.array(g.data) for g in giiData.darrays]).T
             nTRs = Xgm.shape[1]
-            Xgm = stats.zscore(Xgm, axis=1, ddof=1)
+            constant_rows = np.where(np.all([Xgm[i,:]==Xgm[i,0] for i in range(Xgm.shape[0])],axis=1))[0]
+            maskAll = np.ones(Xgm.shape[0]).astype(bool)
+            maskAll[constant_rows] = False
+            Xgm = stats.zscore(Xgm[maskAll,:], axis=1, ddof=1)
         else:
             # load masks
             maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
@@ -1795,7 +1798,10 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             giiData = nib.load(config.fmriFile_dn)
             Xgm = np.vstack([np.array(g.data) for g in giiData.darrays]).T
             nTRs = Xgm.shape[1]
-            Xgm = stats.zscore(Xgm, axis=1, ddof=1)
+            constant_rows = np.where(np.all([Xgm[i,:]==Xgm[i,0] for i in range(Xgm.shape[0])],axis=1))[0]
+            maskAll = np.ones(Xgm.shape[0]).astype(bool)
+            maskAll[constant_rows] = False
+            Xgm = stats.zscore(Xgm[maskAll,:], axis=1, ddof=1)
         else:
             X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
             X = stats.zscore(X, axis=1, ddof=1)
@@ -1855,7 +1861,7 @@ def parcellate(overwrite=False):
             call(cmd, shell=True)
         allparcels = np.loadtxt(config.parcellationFile.replace('.dlabel.nii','.tsv'))
     elif config.isGifti:
-        giiParcels = nib.load(config.parcellationFile)
+        giiParcels = nib.load(config.parcellationFile) #TODO: check
         allparcels = np.vstack([np.array(g.data) for g in giiData.darrays]).T
     else:
         maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
@@ -1880,6 +1886,11 @@ def parcellate(overwrite=False):
         elif config.isGifti:
             giiData = nib.load(config.fmriFile)
             data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+            constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
+            maskAll = np.ones(data.shape[0]).astype(bool)
+            maskAll[constant_rows] = False
+            data = data[maskAll,:]
+            allparcels = allparcels[maskAll,:] #TODO: check
         else:
             data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
         
@@ -1908,6 +1919,10 @@ def parcellate(overwrite=False):
         elif config.isGifti:
             giiData = nib.load(config.fmriFile_dn)
             data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+            constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
+            maskAll = np.ones(data.shape[0]).astype(bool)
+            maskAll[constant_rows] = False
+            data = data[maskAll,:])
         else:
             data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
                    
@@ -2524,6 +2539,11 @@ def runPipeline():
     elif config.isGifti:
         giiData = nib.load(config.fmriFile)
         data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+        nVertices = data.shape[0]
+        constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
+        maskAll = np.ones(data.shape[0]).astype(bool)
+        maskAll[constant_rows] = False
+        data = data[maskAll,:]
         volData = None # TODO: CHECK
         nTRs = data.shape[1]
         nRows, nCols, nSlices, affine, header = None, None, None, None, None
@@ -2592,7 +2612,9 @@ def runPipeline():
         call(cmd,shell=True)
     elif config.isGifti:
         giiData = nib.load(config.fmriFile)
-        giiData.darrays = [nib.gifti.GiftiDataArray(data[:,index]) for index in range(data.shape[1])]
+        newdata = np.zeros([nVertices, data.shape[1]])
+        newData[maskAll,:] = data
+        giiData.darrays = [nib.gifti.GiftiDataArray(newData[:,index]) for index in range(newData.shape[1])]
         nib.save(giiData, op.join(outDir,outFile+'.func.gii'))
     else:
         niiImg = np.zeros((nRows*nCols*nSlices, nTRs),dtype=np.float32)
