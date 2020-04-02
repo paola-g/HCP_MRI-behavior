@@ -113,6 +113,8 @@ def get_confounds():
     # t_comp_cor_00 t_comp_cor_01 t_comp_cor_02 t_comp_cor_03 t_comp_cor_04 t_comp_cor_05
     # a_comp_cor_00 a_comp_cor_01 a_comp_cor_02 a_comp_cor_03 a_comp_cor_04 a_comp_cor_05	
     # cosine00 cosine01 cosine02 cosine03 trans_x trans_y trans_z rot_x	rot_y rot_z
+    if hasattr(config, 'confounds'):
+        return config.confounds
     if hasattr(config, 'session') and config.session:
         confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session,'func', 
 		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
@@ -121,6 +123,7 @@ def get_confounds():
 		config.subject+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
     data = pd.read_csv(confoundsFile, delimiter='\t')
     data.replace('n/a', 0, inplace=True)
+    config.confounds = data
     return data
 #----------------------------------
 # EVs for task regression
@@ -1481,7 +1484,9 @@ def Detrending(niiImg, flavor, masks, imgInfo):
         volData = niiImg[0]
 
     if flavor[2] == 'WMCSF':
-        niiImgWMCSF = volData[np.logical_or(maskWM_,maskCSF_),:]
+        data = get_confounds()  
+        meanWM = np.array(data.loc[:,'white_matter'])
+        meanCSF = np.array(data.loc[:,'csf'])
         if flavor[0] == 'legendre':
             y = legendre_poly(flavor[1],nTRs)                
         elif flavor[0] == 'poly':       
@@ -1493,8 +1498,8 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:]/np.max(y[i,:]) 
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
-        niiImgWMCSF = regress(niiImgWMCSF, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
-        volData[np.logical_or(maskWM_,maskCSF_),:] = niiImgWMCSF
+        data['wm'] = regress(meanWM, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
+        data['csf'] = regress(meanCSF, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
     elif flavor[2] == 'GM':
         if config.isCifti:
             niiImgGM = niiImg[0]
