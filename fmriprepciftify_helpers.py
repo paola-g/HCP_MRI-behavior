@@ -1500,6 +1500,7 @@ def Detrending(niiImg, flavor, masks, imgInfo):
             print('Warning! Wrong detrend flavor. Nothing was done')
         data['wm'] = regress(meanWM, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
         data['csf'] = regress(meanCSF, nTRs, TR, y[1:nPoly,:].T, config.preWhitening)
+        config.confounds = data
     elif flavor[2] == 'GM':
         if config.isCifti:
             niiImgGM = niiImg[0]
