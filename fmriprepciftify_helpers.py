@@ -1755,6 +1755,8 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             Xgm = np.vstack([np.array(g.data) for g in giiData.darrays]).T
             nTRs = Xgm.shape[1]
             constant_rows = np.where(np.all([Xgm[i,:]==Xgm[i,0] for i in range(Xgm.shape[0])],axis=1))[0]
+            nan_rows = np.where(np.isnan(Xgm).all(axis=1))
+            constant_rows = np.union1d(constant_rows,nan_rows)
             maskAll = np.ones(Xgm.shape[0]).astype(bool)
             maskAll[constant_rows] = False
             Xgm = stats.zscore(Xgm[maskAll,:], axis=1, ddof=1)
@@ -1799,6 +1801,8 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
             Xgm = np.vstack([np.array(g.data) for g in giiData.darrays]).T
             nTRs = Xgm.shape[1]
             constant_rows = np.where(np.all([Xgm[i,:]==Xgm[i,0] for i in range(Xgm.shape[0])],axis=1))[0]
+            nan_rows = np.where(np.isnan(Xgm).all(axis=1))
+            constant_rows = np.union1d(constant_rows,nan_rows)
             maskAll = np.ones(Xgm.shape[0]).astype(bool)
             maskAll[constant_rows] = False
             Xgm = stats.zscore(Xgm[maskAll,:], axis=1, ddof=1)
@@ -1887,6 +1891,8 @@ def parcellate(overwrite=False):
             giiData = nib.load(config.fmriFile)
             data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
             constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
+            nan_rows = np.where(np.isnan(data).all(axis=1))
+            constant_rows = np.union1d(constant_rows,nan_rows)
             maskAll = np.ones(data.shape[0]).astype(bool)
             maskAll[constant_rows] = False
             data = data[maskAll,:]
@@ -1920,6 +1926,8 @@ def parcellate(overwrite=False):
             giiData = nib.load(config.fmriFile_dn)
             data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
             constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
+            nan_rows = np.where(np.isnan(data).all(axis=1))
+            constant_rows = np.union1d(constant_rows,nan_rows)
             maskAll = np.ones(data.shape[0]).astype(bool)
             maskAll[constant_rows] = False
             data = data[maskAll,:]
@@ -2541,6 +2549,8 @@ def runPipeline():
         data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
         nVertices = data.shape[0]
         constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
+        nan_rows = np.where(np.isnan(data).all(axis=1))
+        constant_rows = np.union1d(constant_rows,nan_rows)
         np.savetxt(op.join(outpath(),'constant_rows.txt'), constant_rows, delimiter='\n', fmt='%d')
         maskAll = np.ones(data.shape[0]).astype(bool)
         maskAll[constant_rows] = False
