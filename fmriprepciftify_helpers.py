@@ -78,7 +78,7 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 import seaborn as sns
 import nistats
 from nistats import design_matrix
-from astropy.timeseries import LombScargle
+#from astropy.timeseries import LombScargle
 
 #----------------------------------
 # function to build dinamycally path to input fMRI file
@@ -232,7 +232,7 @@ config.operationDict = {
     'C': [ #Siegel et al. 2016 (SiegelB)
         ['VoxelNormalization',      1, ['demean']],
         ['Detrending',              2, ['poly', 1, 'wholebrain']],
-        ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 'WMCSF', 'wholebrain']],
         ['TissueRegression',        3, ['GM', 'wholebrain']], 
         ['GlobalSignalRegression',  3, ['GS']],
         ['MotionRegression',        3, ['censoring']],
@@ -918,7 +918,7 @@ def interpolate(data,censored,TR,nTRs,method='linear'):
             intpts = H[censored]
             tseries[censored] = intpts
             data[i,:] = tseries
-        elif method == 'astropy':
+        elif method == 'astropy': 
             lombs = LombScargle(tpoints*TR, cens_tseries)
             frequency, power = lombs.autopower(normalization='standard', samples_per_peak=8, nyquist_factor=1, method='fast')
             pwsort = np.argsort(power)
@@ -1922,7 +1922,7 @@ def parcellate(overwrite=False):
             constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
             maskAll = np.ones(data.shape[0]).astype(bool)
             maskAll[constant_rows] = False
-            data = data[maskAll,:])
+            data = data[maskAll,:]
         else:
             data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
                    
@@ -2541,8 +2541,10 @@ def runPipeline():
         data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
         nVertices = data.shape[0]
         constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
+        np.savetxt(op.join(outpath(),'constant_rows.txt'), constant_rows, delimiter='\n', fmt='%d')
         maskAll = np.ones(data.shape[0]).astype(bool)
         maskAll[constant_rows] = False
+        masks[0] = maskAll
         data = data[maskAll,:]
         volData = None # TODO: CHECK
         nTRs = data.shape[1]
@@ -2612,7 +2614,7 @@ def runPipeline():
         call(cmd,shell=True)
     elif config.isGifti:
         giiData = nib.load(config.fmriFile)
-        newdata = np.zeros([nVertices, data.shape[1]])
+        newData = np.zeros([nVertices, data.shape[1]])
         newData[maskAll,:] = data
         giiData.darrays = [nib.gifti.GiftiDataArray(newData[:,index]) for index in range(newData.shape[1])]
         nib.save(giiData, op.join(outDir,outFile+'.func.gii'))
