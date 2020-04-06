@@ -359,7 +359,10 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  @return [tuple] whole brain, white matter, cerebrospinal fluid and gray matter masks
 #  
 def makeTissueMasks(overwrite=False,precomputed=False):
-    fmriFile = config.fmriFile
+    if config.isCifti:
+        fmriFile = op.join(buildpath(), prefix+config.fmriRun+'.nii.gz')
+    else:
+        fmriFile = config.fmriFile
     WMmaskFileout = op.join(outpath(), 'WMmask.nii')
     CSFmaskFileout = op.join(outpath(), 'CSFmask.nii')
     GMmaskFileout = op.join(outpath(), 'GMmask.nii')
@@ -576,7 +579,7 @@ def prepareJobArrayFromJobList():
     with open(op.join('tmp{}'.format(config.tStamp),'qsub'),'w') as f:
         f.write('#!/bin/bash\n')
         f.write('#$ -S /bin/bash\n')
-        f.write('#$ -t 1-{}\n'.format(len(config.scriptlist)))
+        f.write('#$ -t 1-{} -tc 4\n'.format(len(config.scriptlist)))
         f.write('#$ -cwd -V -N tmp{}\n'.format(config.tStamp))
         f.write('#$ -e {}\n'.format(op.join('tmp{}'.format(config.tStamp),'err')))
         f.write('#$ -o {}\n'.format(op.join('tmp{}'.format(config.tStamp),'out')))
