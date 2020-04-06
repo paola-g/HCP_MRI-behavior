@@ -360,6 +360,7 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  
 def makeTissueMasks(overwrite=False,precomputed=False):
     if config.isCifti:
+        prefix = config.session+'_' if  hasattr(config,'session')  else '' 
         fmriFile = op.join(buildpath(), prefix+config.fmriRun+'.nii.gz')
     else:
         fmriFile = config.fmriFile
