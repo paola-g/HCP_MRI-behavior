@@ -2998,6 +2998,8 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
             thispythonfn += 'config.melodicFolder    = "{}"\n'.format(config.melodicFolder.replace('#fMRIrun#', config.fmriRun))
         if hasattr(config, 'session'): 
             thispythonfn += 'config.session    = "{}"\n'.format(config.session)
+        if hasattr(config, 'FCDir'): 
+            thispythonfn += 'config.FCDir    = "{}"\n'.format(config.FCDir)
         thispythonfn += 'config.movementRegressorsFile      = "{}"\n'.format(config.movementRegressorsFile)
         thispythonfn += 'config.movementRelativeRMSFile         = "{}"\n'.format(config.movementRelativeRMSFile)
         if precomputed and not config.overwrite:
