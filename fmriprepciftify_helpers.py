@@ -624,7 +624,10 @@ def extract_noise_components(niiImg=None, WMmask=None, CSFmask=None, num_compone
     """
     if flavor == 'fmriprep' or flavor == None:
         data = get_confounds()
-        components = np.array(data.filter(regex=("a_comp_cor_*")))[:,:num_components]
+        if num_components == 0:
+            components = np.array(data.filter(regex=("a_comp_cor_*")))
+        else:
+            components = np.array(data.filter(regex=("a_comp_cor_*")))[:,:num_components]
     if flavor == 'WMCSF':
         niiImgWMCSF = niiImg[np.logical_or(WMmask,CSFmask),:] 
         niiImgWMCSF[np.isnan(np.sum(niiImgWMCSF, axis=1)), :] = 0
