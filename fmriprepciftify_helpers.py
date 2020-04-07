@@ -268,7 +268,7 @@ config.operationDict = {
         ['Detrending',              2, ['poly', 2, 'wholebrain']],
         ['Detrending',              2, ['legendre', 3, 'GM']],
         ['Detrending',              2, ['legendre', 2, 'WMCSF']],
-        ['TissueRegression',        3, ['CompCor', 'fmriprep', 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'fmriprep', 'wholebrain']],
         ['TissueRegression',        3, ['CompCor', 5, 'WM+CSF','GM']],
         ['TissueRegression',        3, ['CompCor', 5, 'WMCSF','wholebrain']],
         ['TissueRegression',        3, ['WMCSF+dt+sq', 'GM']], 
@@ -624,7 +624,7 @@ def extract_noise_components(niiImg=None, WMmask=None, CSFmask=None, num_compone
     """
     if flavor == 'fmriprep' or flavor == None:
         data = get_confounds()
-        components = np.array(data.filter(regex=("a_comp_cor_*")))
+        components = np.array(data.filter(regex=("a_comp_cor_*")))[:,:num_components]
     if flavor == 'WMCSF':
         niiImgWMCSF = niiImg[np.logical_or(WMmask,CSFmask),:] 
         niiImgWMCSF[np.isnan(np.sum(niiImgWMCSF, axis=1)), :] = 0
@@ -1392,8 +1392,8 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
 
 
     if flavor[0] == 'CompCor':
-        if flavor[1] == 'fmriprep': # use fmriprep output
-            X = extract_noise_components()
+        if flavor[2] == 'fmriprep': # use fmriprep output
+            X = extract_noise_components(num_components=flavor[1])
         else:
             X = extract_noise_components(volData, maskWM_, maskCSF_, num_components=flavor[1], flavor=flavor[2])
     elif flavor[0] == 'WMCSF':
