@@ -113,7 +113,7 @@ def get_confounds():
     # t_comp_cor_00 t_comp_cor_01 t_comp_cor_02 t_comp_cor_03 t_comp_cor_04 t_comp_cor_05
     # a_comp_cor_00 a_comp_cor_01 a_comp_cor_02 a_comp_cor_03 a_comp_cor_04 a_comp_cor_05	
     # cosine00 cosine01 cosine02 cosine03 trans_x trans_y trans_z rot_x	rot_y rot_z
-    if hasattr(config, 'confounds'):
+    if hasattr(config, 'confounds') and not config.confounds is None:
         return config.confounds
     if hasattr(config, 'session') and config.session:
         confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session,'func', 
@@ -1749,7 +1749,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
         # FD
         t = time()
         score = computeFD()
-        
+        config.confounds = None 
         # original volume
         if config.isCifti:
             tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
@@ -2649,7 +2649,7 @@ def runPipeline():
 
     print('Preprocessing complete. ')
     config.fmriFile_dn = op.join(outDir,outFile+config.ext)
-
+    config.confounds = None
     return
 
 ## 
