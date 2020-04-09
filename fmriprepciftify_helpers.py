@@ -1303,6 +1303,28 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         score[np.isnan(score)] = 0
         scoreDVARS = np.array(data['dvars']).astype(float)
         scoreDVARS[np.isnan(scoreDVARS)] = 0
+        thr2 = flavor[2]
+        censDVARS = scoreDVARS > thr2
+        censored = np.where(np.logical_or(np.ravel(score)>thr,censDVARS))
+        np.savetxt(op.join(outpath(), 'FD.txt'), score, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
+    elif flavor[0] == 'FD+DVARS': # as in Siegel et al. 2016
+        data = get_confounds()
+        score = np.array(data['framewise_displacement']).astype(float)
+        score[np.isnan(score)] = 0
+        scoreDVARS = np.array(data['dvars']).astype(float)
+        scoreDVARS[np.isnan(scoreDVARS)] = 0
+        thr2 = flavor[2]
+        censDVARS = scoreDVARS > (100+thr2)/100* np.median(scoreDVARS)
+        censored = np.where(np.logical_or(np.ravel(score)>thr,censDVARS))
+        np.savetxt(op.join(outpath(), 'FD.txt'), score, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
+    elif flavor[0] == 'FDclean-DVARS': 
+        data = get_confounds()
+        score = np.array(data['framewise_displacement']).astype(float)
+        score[np.isnan(score)] = 0
+        scoreDVARS = np.array(data['dvars']).astype(float)
+        scoreDVARS[np.isnan(scoreDVARS)] = 0
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         thr2 = flavor[2]
         censDVARS = scoreDVARS > thr2
@@ -1310,7 +1332,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         np.savetxt(op.join(outpath(), 'FD.txt'), score, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'cleanFD.txt'), cleanFD, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
-    elif flavor[0] == 'FD+DVARS': # as in Siegel et al. 2016
+    elif flavor[0] == 'FDclean+DVARS': # as in Siegel et al. 2016
         data = get_confounds()
         score = np.array(data['framewise_displacement']).astype(float)
         score[np.isnan(score)] = 0
