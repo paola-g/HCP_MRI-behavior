@@ -28,6 +28,7 @@ class config(object):
     plotSteps          = False # produce a grayplot for every processing step 
     isCifti            = False
     isGifti            = False
+    n_contiguous       = 5 # if scrubbing is requested, minimum number of consecutive time points to survive scrubbing
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -1156,6 +1157,19 @@ def rank_variance_ratio(between, within):
     sorted_idx = np.argsort(ratio)
     return sorted_idx[::-1]
 
+def dctmtx(N):
+    """
+    Largely based on http://www.mrc-cbu.cam.ac.uk/wp-content/uploads/2013/01/rsfMRI_GLM.m
+    """
+    K=N
+    n = range(N)
+    C = np.zeros((len(n), K),dtype=np.float32)
+    C[:,0] = np.ones((len(n)),dtype=np.float32)/np.sqrt(N)
+    doublen = [2*x+1 for x in n]
+    for k in range(3,K):
+        C[:,k] = np.sqrt(2/N)*np.cos([np.pi*x*(k-1)/(2*N) for x in doublen])        
+    return C 
+
 # ---------------------
 # Pipeline Operations
 def TaskRegression(niiImg, flavor, masks, imgInfo):
@@ -1309,7 +1323,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         np.savetxt(op.join(outpath(), 'FD.txt'), score, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'cleanFD.txt'), cleanFD, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
-    elif flavor[0] == 'RMS': # not working yet, needs output from mcflirt (something to to with center of rotations)
+    elif flavor[0] == 'RMS': # not working yet, needs output from mcflirt (something to do with center of rotations)
         maskAll, maskWM_, maskCSF_, maskGM_ = masks
         data = get_confounds()
         regs = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
@@ -1360,14 +1374,15 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         censored = np.unique(censored[np.where(np.logical_and(censored>=0, censored<len(score)))])
     censored = np.ravel(censored)
     toAppend = np.array([])
+    n_cont = config.n_contiguous if hasattr(config,'n_contiguous')  else 5
     for i in range(len(censored)):
-        if censored[i] > 0 and censored[i] < 5:
+        if censored[i] > 0 and censored[i] < n_cont:
             toAppend = np.union1d(toAppend,np.arange(0,censored[i]))
-        elif censored[i] > nTRs - 5:
+        elif censored[i] > nTRs - n_cont:
             toAppend = np.union1d(toAppend,np.arange(censored[i]+1,nTRs))
         elif i<len(censored) - 1:
             gap = censored[i+1] - censored[i] 
-            if gap > 1 and gap <= 5:
+            if gap > 1 and gap <= n_cont:
                 toAppend = np.union1d(toAppend,np.arange(censored[i]+1,censored[i+1]))
     censored = np.union1d(censored,toAppend)
     censored.sort()
@@ -1607,9 +1622,18 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         X = X.filter(regex=("t_comp_cor_*"))
         return np.array(X)
     elif flavor[0] == 'DCT':
-        X = get_confounds()
-        X = X.filter(regex=("cosine*"))
-        return np.array(X)
+        if len(flavor)>2:
+            K = dctmtx(nTRs)
+            HPC = 1/flavor[1]
+            LPC = 1/flavor[2]
+            nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
+            nLP = int(np.fix(2*(nTRs*TR)/LPC + 1))
+            K = K[:,np.concatenate((range(1,nHP),range(int(nLP)-1,nTRs)))]
+            return K
+        else:
+            X = get_confounds()
+            X = X.filter(regex=("cosine*"))
+            return np.array(X)
     else:
         print('Warning! Wrong temporal filtering flavor. Nothing was done'    )
         return niiImg[0],niiImg[1]
