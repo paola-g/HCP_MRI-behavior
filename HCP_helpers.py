@@ -1251,7 +1251,6 @@ def retrieve_preprocessed(inputFile, operations, outputDir, isCifti):
                 Flavors[cstep].append(opr[2])
             prev_step = opr[1]                
     precomputed = checkXML(inputFile,steps,Flavors,outputDir,isCifti) 
-    print(precomputed, inputFile, steps, Flavors, outputDir, isCifti)
     return precomputed 																								 
 
 def correlationKernel(X1, X2):
