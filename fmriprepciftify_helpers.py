@@ -22,7 +22,7 @@ class config(object):
     parcellationFile   = ''
     outDir             = 'rsDenoise'
     FCDir              = 'FC'
-    smoothing          = 's0' # ciftify format, used to read CIFTI files
+    smoothing          = '_s0' # ciftify format, used to read CIFTI files
     preprocessing      = 'ciftify' # or 'fmriprep' or 'freesurfer'
     interpolation      = 'linear'
     plotSteps          = False # produce a grayplot for every processing step 
@@ -2055,7 +2055,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                             else:
                                 prefix = config.session+'_'
                                 if isCifti:
-                                    inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+ext)
+                                    inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas'+config.smoothing+ext)
                                 else:
                                     inputFile = op.join(buildpath(), prefix+config.fmriRun+ext)
                             outputPath = outpath() if outputDir is None else outputDir
@@ -2093,7 +2093,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                             inputFile = op.join(config.DATADIR, config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session).replace('#subjectID#', config.subject))
                         else:
                             if isCifti:
-                                inputFile = op.join(buildpath(), config.fmriRun+'_Atlas_'+config.smoothing+ext)
+                                inputFile = op.join(buildpath(), config.fmriRun+'_Atlas'+config.smoothing+ext)
                             else:
                                 inputFile = op.join(buildpath(), config.fmriRun+ext)
                         outputPath = outpath() if (outputDir is None) else outputDir
@@ -2723,7 +2723,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
     else:
         prefix = config.session+'_' if  hasattr(config,'session')  else ''
         if config.isCifti:
-            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.smoothing+config.ext)
+            config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas'+config.smoothing+config.ext)
         else:
             config.fmriFile = op.join(buildpath(), prefix+config.fmriRun+config.ext)
     

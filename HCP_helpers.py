@@ -578,7 +578,7 @@ def prepareJobArrayFromJobList():
     with open(op.join('tmp{}'.format(config.tStamp),'qsub'),'w') as f:
         f.write('#!/bin/bash\n')
         f.write('#$ -S /bin/bash\n')
-        f.write('#$ -t 1-{} -tc 4\n'.format(len(config.scriptlist)))
+        f.write('#$ -t 1-{} -tc 6\n'.format(len(config.scriptlist)))
         f.write('#$ -cwd -V -N tmp{}\n'.format(config.tStamp))
         f.write('#$ -e {}\n'.format(op.join('tmp{}'.format(config.tStamp),'err')))
         f.write('#$ -o {}\n'.format(op.join('tmp{}'.format(config.tStamp),'out')))
@@ -1251,6 +1251,7 @@ def retrieve_preprocessed(inputFile, operations, outputDir, isCifti):
                 Flavors[cstep].append(opr[2])
             prev_step = opr[1]                
     precomputed = checkXML(inputFile,steps,Flavors,outputDir,isCifti) 
+    print(precomputed, inputFile, steps, Flavors, outputDir, isCifti)
     return precomputed 																								 
 
 def correlationKernel(X1, X2):
@@ -2241,7 +2242,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                             else:
                                 prefix = config.session+'_'
                                 if isCifti:
-                                    inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas_'+config.suffix+ext)
+                                    inputFile = op.join(buildpath(), prefix+config.fmriRun+'_Atlas'+config.suffix+ext)
                                 else:
                                     inputFile = op.join(buildpath(), prefix+config.fmriRun+ext)
                             outputPath = outpath() if outputDir is None else outputDir
@@ -2279,7 +2280,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
                             inputFile = op.join(buildpath(), config.fmriFileTemplate.replace('#fMRIrun#', config.fmriRun).replace('#fMRIsession#', config.session))
                         else:
                             if isCifti:
-                                inputFile = op.join(buildpath(), config.fmriRun+'_Atlas_'+config.suffix+ext)
+                                inputFile = op.join(buildpath(), config.fmriRun+'_Atlas'+config.suffix+ext)
                             else:
                                 inputFile = op.join(buildpath(), config.fmriRun+ext)
                         outputPath = outpath() if (outputDir is None) else outputDir
