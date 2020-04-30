@@ -30,6 +30,7 @@ class config(object):
     space              = 'MNI152NLin6Asym_res-2'
     surface            = 'fsLR_den-91k'
     n_contiguous       = 5 # if scrubbing is requested, minimum number of consecutive time points to survive scrubbing
+    config.fcType = 'correlation' # one of {"correlation", "partial correlation", "tangent", "covariance", "precision"}
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -150,6 +151,15 @@ config.operationDict = {
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]],
         ['Scrubbing',               5, ['FD', 0.25]]
+        ],
+     'NSF': [
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 2, 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 0, 'fmriprep', 'wholebrain']],
+        ['MotionRegression',        3, ['ICA-AROMA']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       3, ['DCT', 0.01, 0.08]],
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
         ],
     'A': [ #Finn et al. 2015
         ['VoxelNormalization',      1, ['zscore']],
@@ -337,7 +347,10 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
         else:
             data = np.asarray(img.dataobj).reshape((nRows*nCols*nSlices,nTRs), order='F')
     if not maskAll is None:
-        data = data[maskAll,:]
+        if nTRs==1:
+            data = data[maskAll]
+        else:
+            data = data[maskAll,:]
 
     return data, nRows, nCols, nSlices, nTRs, img.affine, TR, img.header
 	
@@ -347,7 +360,11 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  @return [tuple] whole brain, white matter, cerebrospinal fluid and gray matter masks
 #  
 def makeTissueMasks(overwrite=False,precomputed=False, maskThreshold=0.33):
-    fmriFile = config.fmriFile
+    if config.isCifti:
+        prefix = '_'+config.session if  hasattr(config,'session')  else '' 
+        fmriFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
+    else:
+        fmriFile = config.fmriFile
     WMmaskFileout = op.join(outpath(),'WMmask.nii')
     CSFmaskFileout = op.join(outpath(), 'CSFmask.nii')
     GMmaskFileout = op.join(outpath(), 'GMmask.nii')
@@ -2003,6 +2020,8 @@ def computeFC(overwrite=False):
     FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
     tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
+    cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
+    measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,,vectorize=False)
     ###################
     # original
     ###################
@@ -2013,8 +2032,7 @@ def computeFC(overwrite=False):
     if not op.isfile(fcFile) or overwrite:
         ts = np.loadtxt(alltsFile)
         # correlation
-        corrMat = np.corrcoef(ts,rowvar=0)
-        # np.fill_diagonal(corrMat,1)
+        corrMat = measure.fit_transform(ts)
         # save as .txt
         np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
     ###################
@@ -2034,7 +2052,8 @@ def computeFC(overwrite=False):
             tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
             ts = ts[tokeep,:]
         # correlation
-        corrMat = np.corrcoef(ts,rowvar=0)
+        corrMat = measure.fit_transform(ts)
+        # np.fill_diagonal(corrMat,1)
         # np.fill_diagonal(corrMat,1)
         # save as .txt
         np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
@@ -2506,6 +2525,7 @@ def runPipeline():
                         data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
                     else:    
                         r0 = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])
+                        print(opr, r0.shape)
                         r = np.append(r, r0, axis=1)
                 else:
                     data, volData = Hooks[opr]([data,volData], Flavors[i][j], masks, [nRows, nCols, nSlices, nTRs, affine, TR, header])

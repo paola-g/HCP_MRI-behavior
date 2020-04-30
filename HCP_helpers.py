@@ -29,6 +29,7 @@ class config(object):
     plotSteps          = False # produce a grayplot after each processing step
     isCifti            = False
     sourceDir          = getcwd()
+    config.fcType = 'correlation' # one of {"correlation", "partial correlation", "tangent", "covariance", "precision"}
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -161,6 +162,15 @@ def get_EVs(path,task):
 config.operationDict = {
     'Task': [ #test task regression
         ['TaskRegression',  1, []]
+        ],
+     'NSF': [
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 2, 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', '5', 'WMCSF', 'wholebrain']],
+        ['MotionRegression',        3, ['ICA-AROMA']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       3, ['DCT', 0.01, 0.08]],
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
         ],
      'MyConnectome': [
         ['VoxelNormalization',      1, ['demean']],
@@ -2334,6 +2344,8 @@ def computeFC(overwrite=False):
     FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
     tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
+    cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
+    measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,,vectorize=False)
     ###################
     # original
     ###################
@@ -2344,8 +2356,7 @@ def computeFC(overwrite=False):
     if not op.isfile(fcFile) or overwrite:
         ts = np.loadtxt(alltsFile)
         # correlation
-        corrMat = np.corrcoef(ts,rowvar=0)
-        # np.fill_diagonal(corrMat,1)
+        corrMat = measure.fit_transform(ts)
         # save as .txt
         np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
     ###################
@@ -2365,8 +2376,7 @@ def computeFC(overwrite=False):
             tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
             ts = ts[tokeep,:]
         # correlation
-        corrMat = np.corrcoef(ts,rowvar=0)
-        # np.fill_diagonal(corrMat,1)
+        corrMat = measure.fit_transform(ts)
         # save as .txt
         np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
         if FCDir:
