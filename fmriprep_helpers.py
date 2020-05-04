@@ -2026,13 +2026,13 @@ def computeFC(overwrite=False):
     # original
     ###################
     alltsFile = op.join(tsDir,'allParcels.txt')
-    if not op.isfile(alltsFile):
+    if not op.isfile(alltsFile) or overwrite:
         parcellate(overwrite)
     fcFile     = alltsFile.replace('.txt','_Pearson.txt')
     if not op.isfile(fcFile) or overwrite:
         ts = np.loadtxt(alltsFile)
         # correlation
-        corrMat = measure.fit_transform(ts)
+        corrMat = np.squeeze(measure.fit_transform([ts]))
         # save as .txt
         np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
     ###################
@@ -2040,7 +2040,7 @@ def computeFC(overwrite=False):
     ###################
     rstring = get_rcode(config.fmriFile_dn)
     alltsFile = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
-    if not op.isfile(alltsFile):
+    if not op.isfile(alltsFile) or overwrite:
         parcellate(overwrite)
     fcFile    = alltsFile.replace('.txt','_Pearson.txt')
     if not op.isfile(fcFile) or overwrite:
@@ -2052,7 +2052,7 @@ def computeFC(overwrite=False):
             tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
             ts = ts[tokeep,:]
         # correlation
-        corrMat = measure.fit_transform(ts)
+        corrMat = np.squeeze(measure.fit_transform([ts]))
         # np.fill_diagonal(corrMat,1)
         # np.fill_diagonal(corrMat,1)
         # save as .txt
