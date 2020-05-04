@@ -30,7 +30,7 @@ class config(object):
     space              = 'MNI152NLin6Asym_res-2'
     surface            = 'fsLR_den-91k'
     n_contiguous       = 5 # if scrubbing is requested, minimum number of consecutive time points to survive scrubbing
-    config.fcType = 'correlation' # one of {"correlation", "partial correlation", "tangent", "covariance", "precision"}
+    fcType             = 'correlation' # one of {"correlation", "partial correlation", "tangent", "covariance", "precision"}
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False

@@ -29,7 +29,7 @@ class config(object):
     plotSteps          = False # produce a grayplot after each processing step
     isCifti            = False
     sourceDir          = getcwd()
-    config.fcType = 'correlation' # one of {"correlation", "partial correlation", "tangent", "covariance", "precision"}
+    fcType             = 'correlation' # one of {"correlation", "partial correlation", "tangent", "covariance", "precision"}
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -588,7 +588,7 @@ def prepareJobArrayFromJobList():
     with open(op.join('tmp{}'.format(config.tStamp),'qsub'),'w') as f:
         f.write('#!/bin/bash\n')
         f.write('#$ -S /bin/bash\n')
-        f.write('#$ -t 1-{} -tc 6\n'.format(len(config.scriptlist)))
+        f.write('#$ -t 1-{} -tc 4\n'.format(len(config.scriptlist)))
         f.write('#$ -cwd -V -N tmp{}\n'.format(config.tStamp))
         f.write('#$ -e {}\n'.format(op.join('tmp{}'.format(config.tStamp),'err')))
         f.write('#$ -o {}\n'.format(op.join('tmp{}'.format(config.tStamp),'out')))
@@ -2345,7 +2345,7 @@ def computeFC(overwrite=False):
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
     tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
-    measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,,vectorize=False)
+    measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
     ###################
     # original
     ###################
