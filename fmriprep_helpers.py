@@ -155,7 +155,7 @@ config.operationDict = {
      'NSF': [
         ['VoxelNormalization',      1, ['demean']],
         ['Detrending',              2, ['poly', 2, 'wholebrain']],
-        ['TissueRegression',        3, ['CompCor', 0, 'fmriprep', 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'fmriprep', 'wholebrain']],
         ['MotionRegression',        3, ['ICA-AROMA']],
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       3, ['DCT', 0.01, 0.08]],
@@ -2021,7 +2021,7 @@ def computeFC(overwrite=False):
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
     tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
-    measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,,vectorize=False)
+    measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
     ###################
     # original
     ###################
