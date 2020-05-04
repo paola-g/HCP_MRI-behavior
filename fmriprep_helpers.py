@@ -21,7 +21,6 @@ class config(object):
     parcellationFile   = ''
     outDir             = 'rsDenoise'
     FCDir              = 'FC'
-    smoothing          = 's0' # ciftify format, used to read CIFTI files
     preprocessing      = 'freesurfer' # 'fmriprep' or 'freesurfer' (with the last meaning fmriprep+freesurfer)
     interpolation      = 'linear'
     plotSteps          = False # produce a grayplot for every processing step 
@@ -1165,6 +1164,14 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         score[np.isnan(score)] = 0
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         censored = np.where(cleanFD>thr)
+    elif flavor[0] == 'FDmultiband':
+        data = get_confounds() 
+        n = np.round(2/TR)
+        motpars = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+        motpars = clean(motpars, detrend=False, standardize=False, t_r=TR, high_pass=0.2, low_pass=0.5)
+        dmotpars = np.vstack([np.zeros([n,6]),np.apply_along_axis(np.diff,0,motpars,n=n)])
+        score = np.sum(dmotpars,1)
+        censored = np.where(score>thr)
     elif flavor[0] == 'DVARS':
         data = get_confounds()
         score = np.array(data['dvars']).astype(float)
@@ -1269,7 +1276,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         censored = np.unique(censored[np.where(np.logical_and(censored>=0, censored<len(score)))])
     censored = np.ravel(censored)
     toAppend = np.array([])
-    n_cont = config.n_contiguous if hasattr(config,'n_contiguous')  else 5
+    n_cont = config.n_contiguous if hasattr(config,'n_contiguous') else 5
     for i in range(len(censored)):
         if censored[i] > 0 and censored[i] < n_cont:
             toAppend = np.union1d(toAppend,np.arange(0,censored[i]))
