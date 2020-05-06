@@ -30,6 +30,7 @@ class config(object):
     surface            = 'fsLR_den-91k'
     n_contiguous       = 5 # if scrubbing is requested, minimum number of consecutive time points to survive scrubbing
     fcType             = 'correlation' # one of {"correlation", "partial correlation", "tangent", "covariance", "precision"}
+    headradius         = 50 # 50mm as in Powers et al. 2012
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -444,9 +445,15 @@ def makeTissueMasks(overwrite=False,precomputed=False, maskThreshold=0.33):
             call(cmd,shell=True)
 
         else: # only fmriprep
-            wmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-WM_probseg.nii.gz')
-            gmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-GM_probseg.nii.gz')
-            csfFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-CSF_probseg.nii.gz')
+            if config.space == 'T1w':
+                wmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-WM_probseg.nii.gz')
+                gmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-GM_probseg.nii.gz')
+                csfFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-CSF_probseg.nii.gz')
+            else: # format template_res-?
+                template = (config.space).split('_')[0]
+                wmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_'+template+'_label-WM_probseg.nii.gz')
+                gmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_'+template+'_label-GM_probseg.nii.gz')
+                csfFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_'+template+'_label-CSF_probseg.nii.gz')
 
             # load nii 
             ref = nib.load(wmFilein)
@@ -1165,12 +1172,19 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         censored = np.where(cleanFD>thr)
     elif flavor[0] == 'FDmultiband':
-        data = get_confounds() 
         n = np.round(2/TR)
+        nyq = 0.5*1/TR
+        low = 0.2/nyq
+        high = 0.5/nyq
+        i, u = signal.butter(10, [low,high], btype='bandstop')
+        data = get_confounds() 
         motpars = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
-        motpars = clean(motpars, detrend=False, standardize=False, t_r=TR, high_pass=0.2, low_pass=0.5)
-        dmotpars = np.vstack([np.zeros([n,6]),np.apply_along_axis(np.diff,0,motpars,n=n)])
+        motpars_detrend = signal.detrend(motpars, axis=0)
+        clean_motpars = signal.filtfilt(i,u,motpars_detrend,axis=0) 
+        dmotpars = np.vstack([np.zeros([n,6]),np.abs(clean_motpars[n:,:] - clean_motpars[:-n,:])])
+        dmotpars[:,3:6] = dmotpars[:,3:6]*50
         score = np.sum(dmotpars,1)
+        np.savetxt(op.join(outpath(), 'FDmultiband.txt'), score, delimiter='\n', fmt='%f')
         censored = np.where(score>thr)
     elif flavor[0] == 'DVARS':
         data = get_confounds()
