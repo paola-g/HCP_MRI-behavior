@@ -1172,7 +1172,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
         censored = np.where(cleanFD>thr)
     elif flavor[0] == 'FDmultiband':
-        n = np.round(2/TR)
+        n = int(np.round(2/TR))
         nyq = 0.5*1/TR
         low = 0.2/nyq
         high = 0.5/nyq
