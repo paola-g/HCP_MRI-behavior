@@ -3024,6 +3024,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
                 thispythonfn += 'try:\n    remove(config.fmriFile_dn.replace(".gz",""))\nexcept OSError:\n    pass\n'
             if config.isCifti:
                 thispythonfn += 'for f in glob.glob(config.fmriFile_dn.replace(".dtseries.nii","*.tsv")): os.remove(f)\n'
+                thispythonfn += 'for f in glob.glob(config.fmriFile.replace(".dtseries.nii","*.tsv")): os.remove(f)\n'
         thispythonfn += 'logFid.close()\n'
         thispythonfn += 'END'
 
@@ -3082,6 +3083,11 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
                     pass
             if config.isCifti:
                 for f in glob.glob(config.fmriFile_dn.replace(".dtseries.nii","*.tsv")):
+                    try:
+                        remove(f)
+                    except OSError:
+                        pass
+                for f in glob.glob(config.fmriFile.replace(".dtseries.nii","*.tsv")):
                     try:
                         remove(f)
                     except OSError:
