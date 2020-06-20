@@ -165,7 +165,7 @@ config.operationDict = {
      'NSF': [
         ['VoxelNormalization',      1, ['demean']],
         ['Detrending',              2, ['poly', 2, 'wholebrain']],
-        ['TissueRegression',        3, ['CompCor', '5', 'WMCSF', 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
         ['MotionRegression',        3, ['ICA-AROMA']],
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       3, ['DCT', 0.01, 0.08]],
@@ -587,7 +587,7 @@ def prepareJobArrayFromJobList():
     with open(op.join('tmp{}'.format(config.tStamp),'qsub'),'w') as f:
         f.write('#!/bin/bash\n')
         f.write('#$ -S /bin/bash\n')
-        f.write('#$ -t 1-{} -tc 4\n'.format(len(config.scriptlist)))
+        f.write('#$ -t 1-{} -tc 7\n'.format(len(config.scriptlist)))
         f.write('#$ -cwd -V -N tmp{}\n'.format(config.tStamp))
         f.write('#$ -e {}\n'.format(op.join('tmp{}'.format(config.tStamp),'err')))
         f.write('#$ -o {}\n'.format(op.join('tmp{}'.format(config.tStamp),'out')))
@@ -2341,7 +2341,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
 def computeFC(overwrite=False):
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
     FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
-    if FCDir and not op.isdir(FCDir): makedirs(FCDir)
+    if FCDir and not op.isdir(FCDir): makedirs(FCDir, exist_ok=True)
     tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
     measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
@@ -2354,6 +2354,7 @@ def computeFC(overwrite=False):
     fcFile     = alltsFile.replace('.txt','_Pearson.txt')
     if not op.isfile(fcFile) or overwrite:
         ts = np.loadtxt(alltsFile)
+        ts[np.where(np.isnan(ts))] = 0
         # correlation
         corrMat = np.squeeze(measure.fit_transform([ts]))
         # save as .txt
@@ -2368,6 +2369,7 @@ def computeFC(overwrite=False):
     fcFile    = alltsFile.replace('.txt','_Pearson.txt')
     if not op.isfile(fcFile) or overwrite:
         ts = np.loadtxt(alltsFile)
+        ts[np.where(np.isnan(ts))] = 0
         # censor time points that need censoring
         if config.doScrubbing:
             censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
@@ -2813,7 +2815,7 @@ def runPipeline():
         print('Step '+str(i)+' '+str(step))
         if len(step) == 1:
             # Atomic operations
-            if 'Regression' in step[0] or ('wholebrain' in Flavors[i][0]):
+            if ('Regression' in step[0]) or ('TemporalFiltering' in step[0] and 'DCT' in Flavors[i][0]) or ('wholebrain' in Flavors[i][0]):
                 if ((step[0]=='TissueRegression' and 'GM' in Flavors[i][0] and 'wholebrain' not in Flavors[i][0]) or
                    (step[0]=='MotionRegression' and 'nonaggr' in Flavors[i][0])): 
                     #regression constrained to GM
@@ -2829,7 +2831,7 @@ def runPipeline():
             r = np.empty((nTRs, 0))
             for j in range(len(step)):
                 opr = step[j]
-                if 'Regression' in opr or ('wholebrain' in Flavors[i][j]):
+                if ('Regression' in opr) or ('TemporalFiltering' in opr and 'DCT' in Flavors[i][j]) or ('wholebrain' in Flavors[i][j]):
                     if ((opr=='TissueRegression' and 'GM' in Flavors[i][j] and 'wholebrain' not in Flavors[i][j]) or
                        (opr=='MotionRegression' and 'nonaggr' in Flavors[i][j])): 
                         #regression constrained to GM
