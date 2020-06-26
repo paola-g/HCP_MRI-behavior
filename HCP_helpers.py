@@ -1481,7 +1481,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         if hasattr(config,'melodicFolder'):
             icaOut = op.join(buildpath(),config.melodicFolder)
         else:
-            icaOut = op.join(buildpath(), 'icaOut')
+            icaOut = op.join(outpath(), 'icaOut')
             try:
                 mkdir(icaOut)
             except OSError:
@@ -1499,7 +1499,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         melmix = op.join(icaOut,'melodic_mix')
         melFTmix = op.join(icaOut,'melodic_FTmix')
         
-        edgeFract, csfFract = feature_spatial(fslDir, icaOut, buildpath(), melIC_MNI)
+        edgeFract, csfFract = feature_spatial(fslDir, icaOut, outpath(), melIC_MNI)
         maxRPcorr = feature_time_series(melmix, mc)
         HFC = feature_frequency(melFTmix, TR)
         motionICs = classification(icaOut, maxRPcorr, edgeFract, HFC, csfFract)
@@ -1522,7 +1522,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
 
                 if config.doScrubbing:
                     nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
-                    toCensor = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
+                    toCensor = np.loadtxt(op.join(outpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
                     npts = toCensor.size
                     if npts==1:
                         toCensor=np.reshape(toCensor,(npts,))
@@ -1586,7 +1586,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         dt = np.concatenate((np.zeros((dt.shape[0],1),dtype=np.float32), dt), axis=1)
         score = np.sqrt(np.mean(dt**2,0))        
         censored = np.where(score>thr)
-        np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
+        np.savetxt(op.join(outpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
     elif flavor[0] == 'FD':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
         dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
@@ -1594,7 +1594,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         disp[:,3:]=np.pi*config.headradius*2*(disp[:,3:]/360)
         score=np.sum(disp,1)
         censored = np.where(score>thr)
-        np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
+        np.savetxt(op.join(outpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
     elif flavor[0] == 'FD+DVARS':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
         dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
@@ -1806,7 +1806,6 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:]/np.max(y[i,:])        
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
-        print(y)
         return y.T    
     else:
         print('Warning! Wrong detrend mask. Nothing was done' )
@@ -1871,11 +1870,16 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
             niiImg[1] = signal.lfilter(w,1,data2)
     elif flavor[0] == 'DCT':
         K = dctmtx(nTRs)
-        HPC = 1/flavor[1]
-        LPC = 1/flavor[2]
-        nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
-        nLP = int(np.fix(2*(nTRs*TR)/LPC + 1))
-        K = K[:,np.concatenate((range(1,nHP),range(int(nLP)-1,nTRs)))]
+        if len(flavor)>2:
+            HPC = 1/flavor[1]
+            LPC = 1/flavor[2]
+            nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
+            nLP = int(np.fix(2*(nTRs*TR)/LPC + 1))
+            K = K[:,np.concatenate((range(2,nHP),range(int(nLP)-1,nTRs)))]
+        else:
+            HPC = 1/flavor[1]
+            nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
+            K = K[:,range(2,nHP)]
         return K
     else:
         print('Warning! Wrong temporal filtering flavor. Nothing was done')
@@ -2793,7 +2797,7 @@ def runPipeline():
 
     if config.isCifti:
         # volume
-        prefix = config.session+'_' if  hasattr(config,'session')  else ''																  
+        prefix = config.session+'_' if  hasattr(config,'session')  else ''
         volFile = op.join(buildpath(), prefix+config.fmriRun+'.nii.gz')
         print('Loading [volume] data in memory... {}'.format(volFile))
         volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
