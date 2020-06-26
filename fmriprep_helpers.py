@@ -1852,8 +1852,7 @@ def parcellate(overwrite=False):
             call(cmd, shell=True)
         allparcels = np.loadtxt(config.parcellationFile.replace('.dlabel.nii','.tsv'))
     elif config.isGifti:
-        giiParcels = nib.load(config.parcellationFile) #TODO: check
-        allparcels = np.vstack([np.array(g.data) for g in giiParcels.darrays]).T
+        allparcels = nib.freesurfer.read_annot(config.parcellationFile)[0]
     else:
         maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
         if not config.maskParcelswithAll:     
