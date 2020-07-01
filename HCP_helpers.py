@@ -165,7 +165,7 @@ config.operationDict = {
      'NSF': [
         ['VoxelNormalization',      1, ['demean']],
         ['Detrending',              2, ['poly', 2, 'wholebrain']],
-        ['TissueRegression',        3, ['CompCor', '5', 'WMCSF', 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
         ['MotionRegression',        3, ['ICA-AROMA']],
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       3, ['DCT', 0.01, 0.08]],
@@ -587,7 +587,7 @@ def prepareJobArrayFromJobList():
     with open(op.join('tmp{}'.format(config.tStamp),'qsub'),'w') as f:
         f.write('#!/bin/bash\n')
         f.write('#$ -S /bin/bash\n')
-        f.write('#$ -t 1-{} -tc 4\n'.format(len(config.scriptlist)))
+        f.write('#$ -t 1-{} -tc 7\n'.format(len(config.scriptlist)))
         f.write('#$ -cwd -V -N tmp{}\n'.format(config.tStamp))
         f.write('#$ -e {}\n'.format(op.join('tmp{}'.format(config.tStamp),'err')))
         f.write('#$ -o {}\n'.format(op.join('tmp{}'.format(config.tStamp),'out')))
@@ -1481,7 +1481,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         if hasattr(config,'melodicFolder'):
             icaOut = op.join(buildpath(),config.melodicFolder)
         else:
-            icaOut = op.join(buildpath(), 'icaOut')
+            icaOut = op.join(outpath(), 'icaOut')
             try:
                 mkdir(icaOut)
             except OSError:
@@ -1499,7 +1499,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
         melmix = op.join(icaOut,'melodic_mix')
         melFTmix = op.join(icaOut,'melodic_FTmix')
         
-        edgeFract, csfFract = feature_spatial(fslDir, icaOut, buildpath(), melIC_MNI)
+        edgeFract, csfFract = feature_spatial(fslDir, icaOut, outpath(), melIC_MNI)
         maxRPcorr = feature_time_series(melmix, mc)
         HFC = feature_frequency(melFTmix, TR)
         motionICs = classification(icaOut, maxRPcorr, edgeFract, HFC, csfFract)
@@ -1522,7 +1522,7 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
 
                 if config.doScrubbing:
                     nRows, nCols, nSlices, nTRs, affine, TR, header = imgInfo
-                    toCensor = np.loadtxt(op.join(buildpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
+                    toCensor = np.loadtxt(op.join(outpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
                     npts = toCensor.size
                     if npts==1:
                         toCensor=np.reshape(toCensor,(npts,))
@@ -1586,7 +1586,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         dt = np.concatenate((np.zeros((dt.shape[0],1),dtype=np.float32), dt), axis=1)
         score = np.sqrt(np.mean(dt**2,0))        
         censored = np.where(score>thr)
-        np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
+        np.savetxt(op.join(outpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
     elif flavor[0] == 'FD':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
         dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
@@ -1594,7 +1594,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         disp[:,3:]=np.pi*config.headradius*2*(disp[:,3:]/360)
         score=np.sum(disp,1)
         censored = np.where(score>thr)
-        np.savetxt(op.join(buildpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
+        np.savetxt(op.join(outpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
     elif flavor[0] == 'FD+DVARS':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
         dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
@@ -1806,7 +1806,6 @@ def Detrending(niiImg, flavor, masks, imgInfo):
                 y[i,:] = y[i,:]/np.max(y[i,:])        
         else:
             print('Warning! Wrong detrend flavor. Nothing was done')
-        print(y)
         return y.T    
     else:
         print('Warning! Wrong detrend mask. Nothing was done' )
@@ -1871,11 +1870,16 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
             niiImg[1] = signal.lfilter(w,1,data2)
     elif flavor[0] == 'DCT':
         K = dctmtx(nTRs)
-        HPC = 1/flavor[1]
-        LPC = 1/flavor[2]
-        nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
-        nLP = int(np.fix(2*(nTRs*TR)/LPC + 1))
-        K = K[:,np.concatenate((range(1,nHP),range(int(nLP)-1,nTRs)))]
+        if len(flavor)>2:
+            HPC = 1/flavor[1]
+            LPC = 1/flavor[2]
+            nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
+            nLP = int(np.fix(2*(nTRs*TR)/LPC + 1))
+            K = K[:,np.concatenate((range(2,nHP),range(int(nLP)-1,nTRs)))]
+        else:
+            HPC = 1/flavor[1]
+            nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
+            K = K[:,range(2,nHP)]
         return K
     else:
         print('Warning! Wrong temporal filtering flavor. Nothing was done')
@@ -2341,7 +2345,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
 def computeFC(overwrite=False):
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
     FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
-    if FCDir and not op.isdir(FCDir): makedirs(FCDir)
+    if FCDir and not op.isdir(FCDir): makedirs(FCDir, exist_ok=True)
     tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
     measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
@@ -2354,6 +2358,7 @@ def computeFC(overwrite=False):
     fcFile     = alltsFile.replace('.txt','_Pearson.txt')
     if not op.isfile(fcFile) or overwrite:
         ts = np.loadtxt(alltsFile)
+        ts[np.where(np.isnan(ts))] = 0
         # correlation
         corrMat = np.squeeze(measure.fit_transform([ts]))
         # save as .txt
@@ -2368,6 +2373,7 @@ def computeFC(overwrite=False):
     fcFile    = alltsFile.replace('.txt','_Pearson.txt')
     if not op.isfile(fcFile) or overwrite:
         ts = np.loadtxt(alltsFile)
+        ts[np.where(np.isnan(ts))] = 0
         # censor time points that need censoring
         if config.doScrubbing:
             censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints_{}.txt'.format(config.pipelineName)), dtype=np.dtype(np.int32))
@@ -2791,7 +2797,7 @@ def runPipeline():
 
     if config.isCifti:
         # volume
-        prefix = config.session+'_' if  hasattr(config,'session')  else ''																  
+        prefix = config.session+'_' if  hasattr(config,'session')  else ''
         volFile = op.join(buildpath(), prefix+config.fmriRun+'.nii.gz')
         print('Loading [volume] data in memory... {}'.format(volFile))
         volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
@@ -2813,7 +2819,7 @@ def runPipeline():
         print('Step '+str(i)+' '+str(step))
         if len(step) == 1:
             # Atomic operations
-            if 'Regression' in step[0] or ('wholebrain' in Flavors[i][0]):
+            if ('Regression' in step[0]) or ('TemporalFiltering' in step[0] and 'DCT' in Flavors[i][0]) or ('wholebrain' in Flavors[i][0]):
                 if ((step[0]=='TissueRegression' and 'GM' in Flavors[i][0] and 'wholebrain' not in Flavors[i][0]) or
                    (step[0]=='MotionRegression' and 'nonaggr' in Flavors[i][0])): 
                     #regression constrained to GM
@@ -2829,7 +2835,7 @@ def runPipeline():
             r = np.empty((nTRs, 0))
             for j in range(len(step)):
                 opr = step[j]
-                if 'Regression' in opr or ('wholebrain' in Flavors[i][j]):
+                if ('Regression' in opr) or ('TemporalFiltering' in opr and 'DCT' in Flavors[i][j]) or ('wholebrain' in Flavors[i][j]):
                     if ((opr=='TissueRegression' and 'GM' in Flavors[i][j] and 'wholebrain' not in Flavors[i][j]) or
                        (opr=='MotionRegression' and 'nonaggr' in Flavors[i][j])): 
                         #regression constrained to GM

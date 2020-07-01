@@ -1223,7 +1223,46 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         dmotpars[:,3:6] = dmotpars[:,3:6]*50
         score = np.sum(dmotpars,1)
         np.savetxt(op.join(outpath(), 'FDmultiband.txt'), score, delimiter='\n', fmt='%f')
-        censored = np.where(score>thr)
+    elif flavor[0] == 'FDmultiband-DVARS':
+        n = int(np.round(2/TR))
+        nyq = 0.5*1/TR
+        low = 0.2/nyq
+        high = 0.5/nyq
+        i, u = signal.butter(10, [low,high], btype='bandstop')
+        data = get_confounds() 
+        motpars = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+        motpars_detrend = signal.detrend(motpars, axis=0)
+        clean_motpars = signal.filtfilt(i,u,motpars_detrend,axis=0) 
+        dmotpars = np.vstack([np.zeros([n,6]),np.abs(clean_motpars[n:,:] - clean_motpars[:-n,:])])
+        dmotpars[:,3:6] = dmotpars[:,3:6]*50
+        score = np.sum(dmotpars,1)
+        scoreDVARS = np.array(data['dvars']).astype(float)
+        scoreDVARS[np.isnan(scoreDVARS)] = 0
+        thr2 = flavor[2]
+        censDVARS = scoreDVARS > thr2
+        censored = np.where(np.logical_or(np.ravel(score)>thr,censDVARS))
+        np.savetxt(op.join(outpath(), 'FDmultiband.txt'), score, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
+    elif flavor[0] == 'FDmultiband+DVARS':
+        n = int(np.round(2/TR))
+        nyq = 0.5*1/TR
+        low = 0.2/nyq
+        high = 0.5/nyq
+        i, u = signal.butter(10, [low,high], btype='bandstop')
+        data = get_confounds() 
+        motpars = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
+        motpars_detrend = signal.detrend(motpars, axis=0)
+        clean_motpars = signal.filtfilt(i,u,motpars_detrend,axis=0) 
+        dmotpars = np.vstack([np.zeros([n,6]),np.abs(clean_motpars[n:,:] - clean_motpars[:-n,:])])
+        dmotpars[:,3:6] = dmotpars[:,3:6]*50
+        score = np.sum(dmotpars,1)
+        scoreDVARS = np.array(data['dvars']).astype(float)
+        scoreDVARS[np.isnan(scoreDVARS)] = 0
+        thr2 = flavor[2]
+        censDVARS = scoreDVARS > (100+thr2)/100* np.median(scoreDVARS)
+        censored = np.where(np.logical_or(np.ravel(score)>thr,censDVARS))
+        np.savetxt(op.join(outpath(), 'FDmultiband.txt'), score, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
     elif flavor[0] == 'DVARS':
         data = get_confounds()
         score = np.array(data['dvars']).astype(float)
@@ -1313,7 +1352,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
     else:
         print('Wrong scrubbing flavor. Nothing was done')
         return niiImg[0],niiImg[1]
-    pattern = re.compile("FD.DVARS")
+    pattern = re.compile("FD.*DVARS")
     if len(flavor)>3 and pattern.match(flavor[0]):
         pad = flavor[3]
         a_minus = [i-k for i in censored[0] for k in range(1, pad+1)]
@@ -1856,8 +1895,7 @@ def parcellate(overwrite=False):
             call(cmd, shell=True)
         allparcels = np.loadtxt(config.parcellationFile.replace('.dlabel.nii','.tsv'))
     elif config.isGifti:
-        giiParcels = nib.load(config.parcellationFile) #TODO: check
-        allparcels = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+        allparcels = nib.freesurfer.read_annot(config.parcellationFile)[0]
     else:
         maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
         if not config.maskParcelswithAll:     
