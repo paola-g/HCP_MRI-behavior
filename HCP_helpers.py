@@ -59,7 +59,6 @@ from sklearn.linear_model import ElasticNetCV
 from sklearn.kernel_ridge import KernelRidge
 from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
-from sklearn.covariance import MinCovDet,GraphLassoCV
 from nilearn.signal import clean
 from nilearn import connectome
 from sklearn.covariance import MinCovDet,GraphLassoCV,LedoitWolf
@@ -642,7 +641,7 @@ def fnSubmitJobArrayFromJobList():
     with open(op.join('tmp{}'.format(config.tStamp),'qsub'),'w') as f:
         f.write('#!/bin/bash\n')
         f.write('#$ -S /bin/bash\n')
-        f.write('#$ -t 1-{}\n'.format(len(config.scriptlist)))
+        f.write('#$ -t 1-{} -tc 8\n'.format(len(config.scriptlist)))
         f.write('#$ -cwd -V -N tmp{}\n'.format(config.tStamp))
         f.write('#$ -e {}\n'.format(op.join('tmp{}'.format(config.tStamp),'err')))
         f.write('#$ -o {}\n'.format(op.join('tmp{}'.format(config.tStamp),'out')))
@@ -3024,6 +3023,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
                 thispythonfn += 'try:\n    remove(config.fmriFile_dn.replace(".gz",""))\nexcept OSError:\n    pass\n'
             if config.isCifti:
                 thispythonfn += 'for f in glob.glob(config.fmriFile_dn.replace(".dtseries.nii","*.tsv")): os.remove(f)\n'
+                thispythonfn += 'for f in glob.glob(config.fmriFile.replace(".dtseries.nii","*.tsv")): os.remove(f)\n'
         thispythonfn += 'logFid.close()\n'
         thispythonfn += 'END'
 
@@ -3082,6 +3082,11 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
                     pass
             if config.isCifti:
                 for f in glob.glob(config.fmriFile_dn.replace(".dtseries.nii","*.tsv")):
+                    try:
+                        remove(f)
+                    except OSError:
+                        pass
+                for f in glob.glob(config.fmriFile.replace(".dtseries.nii","*.tsv")):
                     try:
                         remove(f)
                     except OSError:

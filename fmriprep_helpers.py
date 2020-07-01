@@ -152,14 +152,50 @@ config.operationDict = {
         ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]],
         ['Scrubbing',               5, ['FD', 0.25]]
         ],
-     'NSF': [
+     'NSF': [ # our CompCor, fmriprep's DCT (highpass)
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 2, 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
+        ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       3, ['DCT']],
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
+        ],
+      'NSF2': [ # our CompCor, our DCT (highpass)
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 2, 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
+        ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       3, ['DCT', 0.008]],
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
+        ],
+      'NSF3': [ # our CompCor, our DCT (bandpass)
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 2, 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
+        ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       3, ['DCT', 0.008, 0.08]],
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
+        ],
+      'NSF4': [ # fmriprep's CompCor, our DCT (highpass)
         ['VoxelNormalization',      1, ['demean']],
         ['Detrending',              2, ['poly', 2, 'wholebrain']],
         ['TissueRegression',        3, ['CompCor', 5, 'fmriprep', 'wholebrain']],
-        ['MotionRegression',        3, ['ICA-AROMA']],
+        ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
         ['GlobalSignalRegression',  3, ['GS']],
-        ['TemporalFiltering',       3, ['DCT', 0.01, 0.08]],
-        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
+        ['TemporalFiltering',       3, ['DCT', 0.008]],
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
+        ],
+      'NSF5': [ # fmriprep's CompCor, our DCT (bandpass)
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 2, 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'fmriprep', 'wholebrain']],
+        ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       3, ['DCT', 0.008, 0.08]],
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
         ],
     'A': [ #Finn et al. 2015
         ['VoxelNormalization',      1, ['zscore']],
@@ -698,7 +734,7 @@ def checkXML(inFile, operations, params, resDir, isCifti=False, isGifti=False, u
     fileList = sorted_ls(resDir, useMostRecent)
     if isCifti:
         ext = '.dtseries.nii' 
-    if isGifti:
+    elif isGifti:
         ext = '.func.gii' 
     else: 
         ext = '.nii.gz'
@@ -1124,6 +1160,8 @@ def MotionRegression(niiImg, flavor, masks, imgInfo):
     elif flavor[0] == 'censoring':
         nRows, nCols, nSlices, nTRs, affine, TR, header =  imgInfo
         X = np.empty((nTRs, 0))
+    elif flavor[0] == 'ICA-AROMA':
+        X = np.array(data.filter(regex=("aroma_motion__*")))
     else:
         print('Wrong flavor, using default regressors: R dR')
         X1 = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
@@ -1538,13 +1576,18 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
         X = X.filter(regex=("t_comp_cor_*"))
         return np.array(X)
     elif flavor[0] == 'DCT':
-        if len(flavor)>2:
+        if len(flavor)>1:
             K = dctmtx(nTRs)
-            HPC = 1/flavor[1]
-            LPC = 1/flavor[2]
-            nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
-            nLP = int(np.fix(2*(nTRs*TR)/LPC + 1))
-            K = K[:,np.concatenate((range(1,nHP),range(int(nLP)-1,nTRs)))]
+            if len(flavor)>2:
+                HPC = 1/flavor[1]
+                LPC = 1/flavor[2]
+                nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
+                nLP = int(np.fix(2*(nTRs*TR)/LPC + 1))
+                K = K[:,np.concatenate((range(2,nHP),range(int(nLP)-1,nTRs)))]
+            else:
+                HPC = 1/flavor[1]
+                nHP = int(np.fix(2*(nTRs*TR)/HPC + 1))
+                K = K[:,range(2,nHP)]
             return K
         else:
             X = get_confounds()
@@ -1737,7 +1780,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
 
         # denoised volume
         if config.isCifti:
-            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            tsvFile = config.fmriFile_dn.replace('.dtseries.nii','.tsv')
             if not op.isfile(tsvFile):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
                 call(cmd,shell=True)
@@ -2081,6 +2124,48 @@ def computeFC(overwrite=False):
         if FCDir:
             np.savetxt(op.join(FCDir,config.subject+'_'+prefix+config.fmriRun+'_ts.txt'),ts,fmt='%.6f',delimiter=',')
 		
+## 
+#  @brief Compute voxel/vertex-wise functional connectivity matrix (output saved to file)
+#  
+#  @param [bool] overwrite True if existing files should be overwritten
+#  
+def compute_vFC(overwrite=False, seed=None):
+    prefix = config.session+'_' if  hasattr(config,'session')  else ''
+    FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
+    if FCDir and not op.isdir(FCDir): makedirs(FCDir)
+    cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
+    measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
+    rstring = get_rcode(config.fmriFile_dn)
+    fcFile    = op.join(FCDir,config.subject+'_'+prefix+config.fmriRun+'_vFC.txt')
+    if not op.isfile(fcFile) or overwrite:
+        if config.isCifti:
+            tsvFile = config.fmriFile_dn.replace('.dtseries.nii','.tsv')
+            if not op.isfile(tsvFile):
+                cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
+                call(cmd,shell=True)
+            X = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
+        elif config.isGifti:
+            giiData = nib.load(config.fmriFile_dn)
+            X = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+            constant_rows = np.where(np.all([X[i,:]==X[i,0] for i in range(X.shape[0])],axis=1))[0]
+            nan_rows = np.where(np.isnan(X).all(axis=1))
+            constant_rows = np.union1d(constant_rows,nan_rows)
+            maskAll = np.ones(X.shape[0]).astype(bool)
+            maskAll[constant_rows] = False
+            X = X[maskAll,:]
+        else:
+            X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
+        # censor time points that need censoring
+        if config.doScrubbing:
+            censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
+            censored = np.atleast_1d(censored)
+            tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
+            X = X[:,tokeep]
+        # correlation
+        corrMat = np.squeeze(measure.fit_transform([X.T]))
+        # save as .txt
+        np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
+
 ## 
 #  @brief Compute functional connectivity matrices before and after preprocessing and generate FC plot
 #  
