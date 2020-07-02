@@ -2205,6 +2205,71 @@ def compute_vFC(overwrite=False, seed=None):
         np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
 
 ## 
+#  @brief Compute voxel/vertex-wise functional connectivity matrix (output saved to file)
+#  
+#  @param [bool] overwrite True if existing files should be overwritten
+#  
+def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellationName=None):
+    prefix = config.session+'_' if  hasattr(config,'session')  else ''
+    FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
+    if FCDir and not op.isdir(FCDir): makedirs(FCDir)
+    cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
+    measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
+    rstring = get_rcode(config.fmriFile_dn)
+    fcFile    = op.join(FCDir,config.subject+'_'+prefix+config.fmriRun+'_seedFC.txt')
+    maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
+    if not config.maskParcelswithAll:     
+        maskAll  = np.ones(np.shape(maskAll), dtype=bool)
+    seedParcel, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(seed, maskAll)
+    seedTS = np.nanmean(data[np.where(seedParcel)[0],:],axis=0),fmt='%.16f',delimiter='\n')
+    if not op.isfile(fcFile) or overwrite:
+        if not parcellationFile:
+            if config.isCifti:
+                tsvFile = config.fmriFile_dn.replace('.dtseries.nii','.tsv')
+                if not op.isfile(tsvFile):
+                    cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
+                    call(cmd,shell=True)
+                X = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
+            elif config.isGifti:
+                giiData = nib.load(config.fmriFile_dn)
+                X = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+                constant_rows = np.where(np.all([X[i,:]==X[i,0] for i in range(X.shape[0])],axis=1))[0]
+                nan_rows = np.where(np.isnan(X).all(axis=1))
+                constant_rows = np.union1d(constant_rows,nan_rows)
+                maskAll = np.ones(X.shape[0]).astype(bool)
+                maskAll[constant_rows] = False
+                X = X[maskAll,:]
+            else:
+                X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
+            # censor time points that need censoring
+            if config.doScrubbing:
+                censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
+                censored = np.atleast_1d(censored)
+                tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
+                X = X[:,tokeep]
+            # correlation
+            corrVec = np.zeros(X.shape[0])
+            for i in range(len(corrVec)):
+                corrVec[i] = np.squeeze(measure.fit_transform([np.vstack(seedTS, Xgm[i,:]]).T]))[0,1]
+            # save as .txt
+        else:
+            tsDir = op.join(outpath(),parcellationName,prefix+config.fmriRun+config.ext)
+            alltsFile = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+            if not op.isfile(alltsFile) or overwrite:
+                parcellate(overwrite)
+                ts = np.loadtxt(alltsFile)
+                # censor time points that need censoring
+                if config.doScrubbing:
+                    censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
+                    censored = np.atleast_1d(censored)
+                    tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
+                    ts = ts[tokeep,:]
+            corrVec = np.zeros(ts.shape[1])
+            for i in range(len(corrVec)):
+                corrVec[i] = np.squeeze(measure.fit_transform([np.vstack(seedTS, ts[:,i]]).T]))[0,1]
+        np.savetxt(fcFile,corrVec,fmt='%.6f',delimiter=',')
+
+## 
 #  @brief Compute functional connectivity matrices before and after preprocessing and generate FC plot
 #  
 #  @param  [bool] displayPlot True if plot should be displayed
@@ -2539,7 +2604,8 @@ def runPredictionParJD(fcMatFile, dataFile, SM='PMAT24_A_CR', iPerm=[0], confoun
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
         thispythonfn += 'config.outDir          = "{}"\n'.format(config.outDir)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
-        thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
+        if hasattr(config, 'parcellationName'): 
+            thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
         #        thispythonfn += 'config.outScore         = "{}"\n'.format(config.outScore)
         thispythonfn += 'config.release          = "{}"\n'.format(config.release)
         thispythonfn += 'config.behavFile        = "{}"\n'.format(config.behavFile)
@@ -2838,9 +2904,12 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         thispythonfn += 'config.Flavors          = {}\n'.format(config.Flavors)
         thispythonfn += 'config.steps            = {}\n'.format(config.steps)
         thispythonfn += 'config.sortedOperations = {}\n'.format(config.sortedOperations)
-        thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
-        thispythonfn += 'config.parcellationFile = "{}"\n'.format(config.parcellationFile)
-        thispythonfn += 'config.nParcels         = {}\n'.format(config.nParcels)
+        if hasattr(config, 'parcellationName'): 
+            thispythonfn += 'config.parcellationName = "{}"\n'.format(config.parcellationName)
+        if hasattr(config, 'parcellationFile'): 
+            thispythonfn += 'config.parcellationFile = "{}"\n'.format(config.parcellationFile)
+        if hasattr(config, 'nParcels'): 
+            thispythonfn += 'config.nParcels         = {}\n'.format(config.nParcels)
         if hasattr(config, 'melodicFolder'): 
             thispythonfn += 'config.melodicFolder    = "{}"\n'.format(config.melodicFolder.replace('#fMRIrun#', config.fmriRun))
         if hasattr(config, 'session'): 
