@@ -168,7 +168,16 @@ config.operationDict = {
         ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
         ['MotionRegression',        3, ['ICA-AROMA']],
         ['GlobalSignalRegression',  3, ['GS']],
-        ['TemporalFiltering',       3, ['DCT', 0.01, 0.08]],
+        ['TemporalFiltering',       3, ['DCT', 0.008, 0.08]],
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
+        ],
+     'NSF2': [
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 2, 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
+        ['MotionRegression',        3, ['ICA-AROMA']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       3, ['DCT', 0.008]],
         ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
         ],
      'MyConnectome': [
@@ -1679,7 +1688,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
             niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
         niiImg2 = 100 * (niiImg[0] - meanImg) / meanImg
         niiImg2[np.where(np.isnan(niiImg2))] = 0
-        dt = np.diff(niiImg[0], n=1, axis=1)
+        dt = np.diff(niiImg2, n=1, axis=1)
         dt = np.concatenate((np.zeros((dt.shape[0],1),dtype=np.float32), dt), axis=1)
         scoreDVARS = np.sqrt(np.mean(dt**2,0)) 
         # as in Siegel et al. 2016
