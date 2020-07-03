@@ -61,7 +61,7 @@ from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
 from nilearn.signal import clean
 from nilearn import connectome
-from sklearn.covariance import MinCovDet,GraphLassoCV,LedoitWolf
+from sklearn.covariance import MinCovDet,GraphicalLassoCV,LedoitWolf
 from past.utils import old_div
 import operator
 import gzip
@@ -1595,6 +1595,22 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         score=np.sum(disp,1)
         censored = np.where(score>thr)
         np.savetxt(op.join(outpath(), '{}_{}.txt'.format(flavor[0],config.pipelineName)), score, delimiter='\n', fmt='%d')
+    elif flavor[0] == 'FDmultiband':
+        n = int(np.round(2/TR))
+        nyq = 0.5*1/TR
+        low = 0.2/nyq
+        high = 0.5/nyq
+        i, u = signal.butter(10, [low,high], btype='bandstop')
+        data = get_confounds() 
+        motionFile = op.join(buildpath(), config.movementRegressorsFile)
+        motpars = np.abs(np.genfromtxt(motionFile)[:,:6]) 
+        motpars_detrend = signal.detrend(motpars, axis=0)
+        clean_motpars = signal.filtfilt(i,u,motpars_detrend,axis=0) 
+        dmotpars = np.vstack([np.zeros([n,6]),np.abs(clean_motpars[n:,:] - clean_motpars[:-n,:])])
+        dmotpars[:,3:6] = dmotpars[:,3:6]*50
+        score = np.sum(dmotpars,1)
+        censored = np.where(score>thr)
+        np.savetxt(op.join(outpath(), 'FDmultiband.txt'), score, delimiter='\n', fmt='%f')
     elif flavor[0] == 'FD+DVARS':
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
         dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
@@ -1619,6 +1635,61 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         censored = np.where(np.logical_or(np.ravel(cleanFD)>thr,censDVARS))
         np.savetxt(op.join(outpath(), 'FD_{}.txt'.format(config.pipelineName)), cleanFD, delimiter='\n', fmt='%f')
         np.savetxt(op.join(outpath(), 'DVARS_{}.txt'.format(config.pipelineName)), scoreDVARS, delimiter='\n', fmt='%f')
+    elif flavor[0] == 'FDmultiband-DVARS':
+        n = int(np.round(2/TR))
+        nyq = 0.5*1/TR
+        low = 0.2/nyq
+        high = 0.5/nyq
+        i, u = signal.butter(10, [low,high], btype='bandstop')
+        data = get_confounds() 
+        motionFile = op.join(buildpath(), config.movementRegressorsFile)
+        motpars = np.abs(np.genfromtxt(motionFile)[:,:6]) 
+        motpars_detrend = signal.detrend(motpars, axis=0)
+        clean_motpars = signal.filtfilt(i,u,motpars_detrend,axis=0) 
+        dmotpars = np.vstack([np.zeros([n,6]),np.abs(clean_motpars[n:,:] - clean_motpars[:-n,:])])
+        dmotpars[:,3:6] = dmotpars[:,3:6]*50
+        score = np.sum(dmotpars,1)
+        # pcSigCh
+        meanImg = np.mean(niiImg[0],axis=1)[:,np.newaxis]
+        close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
+        if close0.shape[0] > 0:
+            meanImg[close0,0] = np.max(np.abs(niiImg[0][close0,:]),axis=1)
+            niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
+        niiImg2 = 100 * (niiImg[0] - meanImg) / meanImg
+        niiImg2[np.where(np.isnan(niiImg2))] = 0
+        dt = np.diff(niiImg[0], n=1, axis=1)
+        dt = np.concatenate((np.zeros((dt.shape[0],1),dtype=np.float32), dt), axis=1)
+        scoreDVARS = np.sqrt(np.mean(dt**2,0)) 
+        thr2 = flavor[2]
+        censDVARS = scoreDVARS > thr2
+        censored = np.where(np.logical_or(np.ravel(score)>thr,censDVARS))
+        np.savetxt(op.join(outpath(), 'FDmultiband.txt'), score, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
+    elif flavor[0] == 'FD-DVARS':
+        motionFile = op.join(buildpath(), config.movementRegressorsFile)
+        dmotpars = np.abs(np.genfromtxt(motionFile)[:,6:]) #derivatives
+        disp=dmotpars.copy()
+        disp[:,3:]=np.pi*config.headradius*2*(disp[:,3:]/360)
+        score=np.sum(disp,1)
+        # pcSigCh
+        meanImg = np.mean(niiImg[0],axis=1)[:,np.newaxis]
+        close0 = np.where(meanImg < 1e5*np.finfo(np.float).eps)[0]
+        if close0.shape[0] > 0:
+            meanImg[close0,0] = np.max(np.abs(niiImg[0][close0,:]),axis=1)
+            niiImg[0][close0,:] = niiImg[0][close0,:] + meanImg[close0,:]
+        niiImg2 = 100 * (niiImg[0] - meanImg) / meanImg
+        niiImg2[np.where(np.isnan(niiImg2))] = 0
+        dt = np.diff(niiImg[0], n=1, axis=1)
+        dt = np.concatenate((np.zeros((dt.shape[0],1),dtype=np.float32), dt), axis=1)
+        scoreDVARS = np.sqrt(np.mean(dt**2,0)) 
+        # as in Siegel et al. 2016
+        cleanFD = clean(score[:,np.newaxis], detrend=False, standardize=False, t_r=TR, low_pass=0.3)
+        thr2 = flavor[2]
+        censDVARS = scoreDVARS > thr2
+        censored = np.where(np.logical_or(np.ravel(cleanFD)>thr,censDVARS))
+        np.savetxt(op.join(outpath(), 'FD.txt'), score, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'cleanFD.txt'), cleanFD, delimiter='\n', fmt='%f')
+        np.savetxt(op.join(outpath(), 'DVARS.txt'), scoreDVARS, delimiter='\n', fmt='%f')
     elif flavor[0] == 'RMS':
         RelRMSFile = op.join(buildpath(), config.movementRelativeRMSFile)
         score = np.loadtxt(RelRMSFile)
@@ -1628,13 +1699,14 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         print('Wrong scrubbing flavor. Nothing was done')
         return niiImg[0],niiImg[1]
     
-    if (len(flavor)>3 and flavor[0] == 'FD+DVARS'):
+    pattern = re.compile("FD.*DVARS")
+    if len(flavor)>3 and pattern.match(flavor[0]):
         pad = flavor[3]
         a_minus = [i-k for i in censored[0] for k in range(1, pad+1)]
         a_plus  = [i+k for i in censored[0] for k in range(1, pad+1)]
         censored = np.concatenate((censored[0], a_minus, a_plus))
         censored = np.unique(censored[np.where(np.logical_and(censored>=0, censored<len(score)))])
-    elif len(flavor) > 2 and flavor[0] != 'FD+DVARS':
+    elif len(flavor) > 2 and pattern.match(flavor[0]) is None:
         pad = flavor[2]
         a_minus = [i-k for i in censored[0] for k in range(1, pad+1)]
         a_plus  = [i+k for i in censored[0] for k in range(1, pad+1)]

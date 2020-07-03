@@ -159,7 +159,7 @@ config.operationDict = {
         ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       3, ['DCT']],
-        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
         ],
       'NSF2': [ # our CompCor, our DCT (highpass)
         ['VoxelNormalization',      1, ['demean']],
@@ -168,7 +168,7 @@ config.operationDict = {
         ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       3, ['DCT', 0.008]],
-        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
         ],
       'NSF3': [ # our CompCor, our DCT (bandpass)
         ['VoxelNormalization',      1, ['demean']],
@@ -177,7 +177,7 @@ config.operationDict = {
         ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       3, ['DCT', 0.008, 0.08]],
-        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
         ],
       'NSF4': [ # fmriprep's CompCor, our DCT (highpass)
         ['VoxelNormalization',      1, ['demean']],
@@ -186,7 +186,7 @@ config.operationDict = {
         ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       3, ['DCT', 0.008]],
-        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
         ],
       'NSF5': [ # fmriprep's CompCor, our DCT (bandpass)
         ['VoxelNormalization',      1, ['demean']],
@@ -195,7 +195,7 @@ config.operationDict = {
         ['MotionRegression',        3, ['ICA-AROMA', 'aggr']],
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       3, ['DCT', 0.008, 0.08]],
-        ['Scrubbing',               5, ['FD-DVARS', 0.25, 25]]
+        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
         ],
     'A': [ #Finn et al. 2015
         ['VoxelNormalization',      1, ['zscore']],
@@ -1223,6 +1223,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         dmotpars[:,3:6] = dmotpars[:,3:6]*50
         score = np.sum(dmotpars,1)
         np.savetxt(op.join(outpath(), 'FDmultiband.txt'), score, delimiter='\n', fmt='%f')
+        censored = np.where(score>thr)
     elif flavor[0] == 'FDmultiband-DVARS':
         n = int(np.round(2/TR))
         nyq = 0.5*1/TR
