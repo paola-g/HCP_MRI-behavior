@@ -64,8 +64,7 @@ from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
 from nilearn.signal import clean
 from nilearn import connectome, image
-#from sklearn.covariance import MinCovDet,GraphLassoCV,LedoitWolf #older version
-from sklearn.covariance import MinCovDet,GraphicalLassoCV,LedoitWolf
+from sklearn.covariance import LedoitWolf
 import operator
 import gzip
 import string
@@ -2120,7 +2119,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
 #  
 def computeFC(overwrite=False):
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
-    FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
+    FCDir = config.FCDir if  hasattr(config,'FCDir')  else outpath()
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
     tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
@@ -2137,7 +2136,7 @@ def computeFC(overwrite=False):
         # correlation
         corrMat = np.squeeze(measure.fit_transform([ts]))
         # save as .txt
-        np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
+        np.savetxt(fcFile,corrMat,fmt='%.16f',delimiter=',')
     ###################
     # denoised
     ###################
@@ -2159,18 +2158,18 @@ def computeFC(overwrite=False):
         # np.fill_diagonal(corrMat,1)
         # np.fill_diagonal(corrMat,1)
         # save as .txt
-        np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
+        np.savetxt(fcFile,corrMat,fmt='%.16f',delimiter=',')
         if FCDir:
-            np.savetxt(op.join(FCDir,config.subject+'_'+prefix+config.fmriRun+'_ts.txt'),ts,fmt='%.6f',delimiter=',')
+            np.savetxt(op.join(FCDir,config.subject+'_'+prefix+config.fmriRun+'_ts.txt'),ts,fmt='%.16f',delimiter=',')
 		
 ## 
 #  @brief Compute voxel/vertex-wise functional connectivity matrix (output saved to file)
 #  
 #  @param [bool] overwrite True if existing files should be overwritten
 #  
-def compute_vFC(overwrite=False, seed=None):
+def compute_vFC(overwrite=False):
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
-    FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
+    FCDir = config.FCDir if  hasattr(config,'FCDir')  else outpath()
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
     cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
     measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
@@ -2203,7 +2202,7 @@ def compute_vFC(overwrite=False, seed=None):
         # correlation
         corrMat = np.squeeze(measure.fit_transform([X.T]))
         # save as .txt
-        np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
+        np.savetxt(fcFile,corrMat,fmt='%.16f',delimiter=',')
 
 ## 
 #  @brief Compute voxel/vertex-wise functional connectivity matrix (output saved to file)
@@ -2212,7 +2211,7 @@ def compute_vFC(overwrite=False, seed=None):
 #  
 def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellationName=None):
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
-    FCDir = config.FCDir if  hasattr(config,'FCDir')  else ''
+    FCDir = config.FCDir if  hasattr(config,'FCDir')  else outpath()
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
     cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
     measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
@@ -2222,16 +2221,24 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
     if not config.maskParcelswithAll:     
         maskAll  = np.ones(np.shape(maskAll), dtype=bool)
     seedParcel, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(seed, maskAll)
-    seedTS = np.nanmean(data[np.where(seedParcel)[0],:],axis=0),fmt='%.16f',delimiter='\n')
+    if config.isCifti or config.isGifti:
+        prefix = '_'+config.session if  hasattr(config,'session')  else ''
+        inFile = op.join(buildpath(),config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
+        volFile = retrieve_preprocessed(inFile, config.Operations, outpath(), False, False)
+        if volFile is None:
+            sys.exit('Could not find preprocessed volumetric data to compute seed time series')
     if not op.isfile(fcFile) or overwrite:
         if not parcellationFile:
             if config.isCifti:
+                volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
                 tsvFile = config.fmriFile_dn.replace('.dtseries.nii','.tsv')
                 if not op.isfile(tsvFile):
                     cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,tsvFile)
                     call(cmd,shell=True)
                 X = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
+                seedTS = np.nanmean(volData[np.where(seedParcel)[0],],axis=0)
             elif config.isGifti:
+                volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
                 giiData = nib.load(config.fmriFile_dn)
                 X = np.vstack([np.array(g.data) for g in giiData.darrays]).T
                 constant_rows = np.where(np.all([X[i,:]==X[i,0] for i in range(X.shape[0])],axis=1))[0]
@@ -2240,22 +2247,27 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
                 maskAll = np.ones(X.shape[0]).astype(bool)
                 maskAll[constant_rows] = False
                 X = X[maskAll,:]
+                seedTS = np.nanmean(volData[np.where(seedParcel)[0],:],axis=0)
             else:
                 X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
-            # censor time points that need censoring
+                seedTS = np.nanmean(X[np.where(seedParcel)[0],:],axis=0)
             if config.doScrubbing:
                 censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
                 censored = np.atleast_1d(censored)
                 tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
                 X = X[:,tokeep]
+                seedTS = seedTS[tokeep]
             # correlation
             corrVec = np.zeros(X.shape[0])
             for i in range(len(corrVec)):
-                corrVec[i] = np.squeeze(measure.fit_transform([np.vstack(seedTS, Xgm[i,:]]).T]))[0,1]
+                corrVec[i] = np.squeeze(measure.fit_transform([np.vstack([seedTS, X[i,:]]).T]))[0,1]
             # save as .txt
         else:
             tsDir = op.join(outpath(),parcellationName,prefix+config.fmriRun+config.ext)
             alltsFile = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+            volFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
+            volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll)
+            seedTS = np.nanmean(volData[np.where(seedParcel)[0],:],axis=0)
             if not op.isfile(alltsFile) or overwrite:
                 parcellate(overwrite)
                 ts = np.loadtxt(alltsFile)
@@ -2265,10 +2277,11 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
                     censored = np.atleast_1d(censored)
                     tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
                     ts = ts[tokeep,:]
+                    seedTS = seedTS[tokeep]
             corrVec = np.zeros(ts.shape[1])
             for i in range(len(corrVec)):
-                corrVec[i] = np.squeeze(measure.fit_transform([np.vstack(seedTS, ts[:,i]]).T]))[0,1]
-        np.savetxt(fcFile,corrVec,fmt='%.6f',delimiter=',')
+                corrVec[i] = np.squeeze(measure.fit_transform([np.vstack([seedTS, ts[:,i]]).T]))[0,1]
+        np.savetxt(fcFile,corrVec,fmt='%.16f',delimiter=',')
 
 ## 
 #  @brief Compute functional connectivity matrices before and after preprocessing and generate FC plot
@@ -2276,12 +2289,28 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
 #  @param  [bool] displayPlot True if plot should be displayed
 #  @param  [bool] overwrite True if existing files should be overwritten
 #  @return [tuple] functional connectivity matrix before and after denoising
+#  @param [bool] seed filename of seed for seed-based FC, do_plotFC should be set to True
+#  @param [bool] vFC if True FC is computed for each voxel or vertex (not for parcel)
 #     
-def plotFC(displayPlot=False,overwrite=False):
+def plotFC(displayPlot=False,overwrite=False,seed=None,vFC=False):
     savePlotFile=config.fmriFile_dn.replace(config.ext,'_'+config.parcellationName+'_fcMat.png')
 
     if not op.isfile(savePlotFile) or overwrite:
-        computeFC(overwrite)
+        if seed is not None:
+            if vFC:
+                compute_seedFC(overwrite, seed)
+                return
+            else:
+                compute_seedFC(overwrite, seed, config.parcellationFile, config.parcellationName)
+                return
+        else:
+            if vFC:
+                compute_vFC(overwrite)
+                return
+            else:
+                computeFC(overwrite)
+                return
+
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
     tsDir      = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     fcFile     = op.join(tsDir,'allParcels_Pearson.txt')
@@ -2684,6 +2713,7 @@ def runPipeline():
             call(cmd,shell=True)
         data = pd.read_csv(config.fmriFile.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
     elif config.isGifti:
+        print('Loading [gifti] data in memory... {}'.format(config.fmriFile))
         giiData = nib.load(config.fmriFile)
         data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
         nVertices = data.shape[0]
@@ -2695,11 +2725,14 @@ def runPipeline():
         maskAll[constant_rows] = False
         masks[0] = maskAll
         data = data[maskAll,:]
-        volData = None # TODO: CHECK
-        nTRs = data.shape[1]
-        nRows, nCols, nSlices, affine, header = None, None, None, None, None
-        TR = float(giiData.darrays[0].metadata['TimeStep'])/1000
-        print('TR =',TR)
+        prefix = '_'+config.session if  hasattr(config,'session')  else ''
+        volFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
+        print('Loading [volume] data in memory... {}'.format(volFile))
+        volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
+        #volData = None # TODO: CHECK
+        #nTRs = data.shape[1]
+        #nRows, nCols, nSlices, affine, header = None, None, None, None, None
+        #TR = float(giiData.darrays[0].metadata['TimeStep'])/1000
     else:
         volFile = config.fmriFile
         print('Loading [volume] data in memory... {}'.format(config.fmriFile))
@@ -2756,7 +2789,7 @@ def runPipeline():
     outFile = config.subject+'_'+prefix+config.fmriRun+'_prepro_'+rstring
     if config.isCifti:
         # write to text file
-        np.savetxt(op.join(outDir,outFile+'.tsv'),data, delimiter='\t', fmt='%.6f')
+        np.savetxt(op.join(outDir,outFile+'.tsv'),data, delimiter='\t', fmt='%.16f')
         # need to convert back to cifti
         cmd = 'wb_command -cifti-convert -from-text {} {} {}'.format(op.join(outDir,outFile+'.tsv'),
                                                                      config.fmriFile,
@@ -2789,8 +2822,14 @@ def runPipeline():
 #  @param [bool] launchSubproc if False, prediction are computed sequentially instead of being submitted to a queue for parallel computation
 #  @param [bool] overwriteFC True if existing FC matrix files should be overwritten 
 #  @param [bool] cleanup True if old files should be removed
+#  @param [bool] do_makeGrayPlot True to produce grayplot in output
+#  @param [bool] do_plotFC True to plot FC before and after denoising
+#  @param [bool] do_computeFC True to compute FC
+#  @param [bool] seed filename of seed for seed-based FC, do_plotFC should be set to True
+#  @param [bool] vFC if True FC is computed for each voxel or vertex (not for parcel)
 #  
-def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGrayPlot=False,do_plotFC=False):
+def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGrayPlot=False,do_plotFC=False,
+                   do_computeFC=False,seed=None, vFC=False):
     if config.queue: 
         priority=-100
     if config.isCifti:
@@ -2809,6 +2848,8 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         prefix = '_'+config.session if  hasattr(config,'session')  else ''
         if config.isCifti:
             config.fmriFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.surface+'_bold.dtseries.nii')
+        elif config.isGifti:
+            config.fmriFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.surface+'.func.gii')
         else:
             config.fmriFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
     
@@ -2856,7 +2897,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
 
     if precomputed and not config.overwrite:
         config.fmriFile_dn = precomputed
-        if (not do_plotFC) and (not do_makeGrayPlot):
+        if (not do_computeFC) and (not do_plotFC) and (not do_makeGrayPlot):
             return True
     else:
         if precomputed:
@@ -2895,6 +2936,8 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
         thispythonfn += 'config.overwrite        = {}\n'.format(config.overwrite)
         thispythonfn += 'overwriteFC             = {}\n'.format(overwriteFC)
+        thispythonfn += 'seed                    = {}\n'.format(seed)
+        thispythonfn += 'vFC                     = {}\n'.format(vFC)
         thispythonfn += 'config.queue            = {}\n'.format(config.queue)
         thispythonfn += 'config.preWhitening     = {}\n'.format(config.preWhitening)
         thispythonfn += 'config.isCifti          = {}\n'.format(config.isCifti)
@@ -2922,7 +2965,18 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         if do_makeGrayPlot:
             thispythonfn += 'makeGrayPlot(overwrite=config.overwrite)\n'
         if do_plotFC:
-            thispythonfn += 'plotFC(overwrite=overwriteFC)\n'
+            thispythonfn += 'plotFC(overwrite=overwriteFC,seed=seed,vFC=vFC)\n'
+        elif do_computeFC:
+            if seed is not None:
+                if vFC:
+                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC,seed=seed)'
+                else:
+                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC, seed=seed, parcellationFile=config.parcellationFile, parcellationName=config.parcellationName)'
+            else:
+                if vFC:
+                    thispythonfn += 'compute_vFC(overwrite=overwriteFC)'
+                else:
+                    thispythonfn += 'computeFC(overwrite=overwriteFC)'
         if cleanup:
             if config.useMemMap:
                 thispythonfn += 'try:\n    remove(config.fmriFile.replace(".gz",""))\nexcept OSError:\n    pass\n'
@@ -2973,7 +3027,18 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
             makeGrayPlot(overwrite=config.overwrite)
 
         if do_plotFC:
-            plotFC(overwrite=overwriteFC)
+            plotFC(overwrite=overwriteFC,seed=seed,vFC=vFC)
+        elif do_computeFC:
+            if seed is not None:
+                if vFC:
+                    compute_seedFC(overwriteFC, seed)
+                else:
+                    compute_seedFC(overwriteFC, seed, config.parcellationFile, config.parcellationName)
+            else:
+                if vFC:
+                    compute_vFC(overwriteFC)
+                else:
+                    computeFC(overwriteFC)
 
         if cleanup:
             if config.useMemMap:
@@ -3108,51 +3173,6 @@ def factor_analysis(X,s=2):
     E = R - np.dot(L, L.T) - np.diag(r)
 
     return B,L,var,fac,E
-    
-def partialcorr_via_linreg(X):
-    # standardize
-    X -= X.mean(axis=0)
-    X /= X.std(axis=0) 
-    p = X.shape[1]
-    P_corr = np.zeros((p, p), dtype=np.float)
-    for i in range(p):
-        P_corr[i, i] = 1
-        for j in range(i+1, p):
-            idx    = np.ones(p, dtype=np.bool)
-            idx[i] = False
-            idx[j] = False
-            beta_i = linalg.lstsq(X[:, idx], X[:, j])[0]
-            beta_j = linalg.lstsq(X[:, idx], X[:, i])[0]
-            res_j  = X[:, j] - X[:, idx].dot(beta_i)
-            res_i  = X[:, i] - X[:, idx].dot(beta_j)
-            corr = stats.pearsonr(res_i, res_j)[0]
-            P_corr[i, j] = corr
-            P_corr[j, i] = corr
-    return P_corr
-
-def partialcorr_via_inverse_L1reg(X):
-    # standardize
-    X -= X.mean(axis=0)
-    X /= X.std(axis=0)
-    model = GraphLassoCV(verbose=True, assume_centered = True) #alphas=np.linspace(.1,1.,19).tolist(), 
-    model.fit(X)
-    return -cov2corr( model.precision_ ),model 
-
-def partialcorr_via_inverse(X):
-    # standardize
-    X -= X.mean(axis=0)
-    X /= X.std(axis=0)
-    # correlation
-    emp_corr = np.dot(X.T, X) / X.shape[0]
-    return -cov2corr(linalg.inv(emp_corr)), emp_corr
-
-def cov2corr( A ):
-    """
-    covariance matrix to correlation matrix.
-    """
-    d = np.sqrt(A.diagonal())
-    A = ((A.T/d).T)/d
-    return A
 
 # Print iterations progress
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '#'):
