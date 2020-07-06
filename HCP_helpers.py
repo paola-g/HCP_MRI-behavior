@@ -61,7 +61,8 @@ from sklearn import linear_model,feature_selection,preprocessing
 from sklearn.preprocessing import RobustScaler
 from nilearn.signal import clean
 from nilearn import connectome
-from sklearn.covariance import MinCovDet,GraphicalLassoCV,LedoitWolf
+#from sklearn.covariance import MinCovDet,GraphicalLassoCV,LedoitWolf
+from sklearn.covariance import LedoitWolf
 from past.utils import old_div
 import operator
 import gzip
@@ -178,7 +179,7 @@ config.operationDict = {
         ['MotionRegression',        3, ['ICA-AROMA']],
         ['GlobalSignalRegression',  3, ['GS']],
         ['TemporalFiltering',       3, ['DCT', 0.008]],
-        ['Scrubbing',               5, ['FD-DVARS', 0.25, 50]]
+        ['Scrubbing',               5, ['FDmultiband', 0.25]]
         ],
      'MyConnectome': [
         ['VoxelNormalization',      1, ['demean']],
@@ -1610,7 +1611,6 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         low = 0.2/nyq
         high = 0.5/nyq
         i, u = signal.butter(10, [low,high], btype='bandstop')
-        data = get_confounds() 
         motionFile = op.join(buildpath(), config.movementRegressorsFile)
         motpars = np.abs(np.genfromtxt(motionFile)[:,:6]) 
         motpars_detrend = signal.detrend(motpars, axis=0)
@@ -3296,51 +3296,6 @@ def factor_analysis(X,s=2):
 
     return B,L,var,fac,E
     
-def partialcorr_via_linreg(X):
-    # standardize
-    X -= X.mean(axis=0)
-    X /= X.std(axis=0) 
-    p = X.shape[1]
-    P_corr = np.zeros((p, p), dtype=np.float)
-    for i in range(p):
-        P_corr[i, i] = 1
-        for j in range(i+1, p):
-            idx    = np.ones(p, dtype=np.bool)
-            idx[i] = False
-            idx[j] = False
-            beta_i = linalg.lstsq(X[:, idx], X[:, j])[0]
-            beta_j = linalg.lstsq(X[:, idx], X[:, i])[0]
-            res_j  = X[:, j] - X[:, idx].dot(beta_i)
-            res_i  = X[:, i] - X[:, idx].dot(beta_j)
-            corr = stats.pearsonr(res_i, res_j)[0]
-            P_corr[i, j] = corr
-            P_corr[j, i] = corr
-    return P_corr
-
-def partialcorr_via_inverse_L1reg(X):
-    # standardize
-    X -= X.mean(axis=0)
-    X /= X.std(axis=0)
-    model = GraphLassoCV(verbose=True, assume_centered = True) #alphas=np.linspace(.1,1.,19).tolist(), 
-    model.fit(X)
-    return -cov2corr( model.precision_ ),model 
-
-def partialcorr_via_inverse(X):
-    # standardize
-    X -= X.mean(axis=0)
-    X /= X.std(axis=0)
-    # correlation
-    emp_corr = np.dot(X.T, X) / X.shape[0]
-    return -cov2corr(linalg.inv(emp_corr)), emp_corr
-
-def cov2corr( A ):
-    """
-    covariance matrix to correlation matrix.
-    """
-    d = np.sqrt(A.diagonal())
-    A = ((A.T/d).T)/d
-    return A
-
 # Print iterations progress
 def printProgressBar (iteration, total, prefix = '', suffix = '', decimals = 1, length = 100, fill = '#'):
     """
