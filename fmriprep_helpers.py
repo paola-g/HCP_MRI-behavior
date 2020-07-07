@@ -2192,7 +2192,9 @@ def compute_vFC(overwrite=False):
             maskAll[constant_rows] = False
             X = X[maskAll,:]
         else:
+            maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
             X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
+            X = X[maskGM_,:]
         # censor time points that need censoring
         if config.doScrubbing:
             censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
