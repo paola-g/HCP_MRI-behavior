@@ -2251,6 +2251,7 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
             else:
                 X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
                 seedTS = np.nanmean(X[np.where(seedParcel)[0],:],axis=0)
+                X = X[maskAll,:]
             if config.doScrubbing:
                 censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
                 censored = np.atleast_1d(censored)
