@@ -2226,6 +2226,8 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
     if not config.maskParcelswithAll:     
         maskAll  = np.ones(np.shape(maskAll), dtype=bool)
     seedParcel, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(seed, maskAll)
+    if config.maskParcelswithGM:
+        seedParcel[np.logical_not(maskGM_)] = 0;
     if config.isCifti or config.isGifti:
         prefix = '_'+config.session if  hasattr(config,'session')  else ''
         inFile = op.join(buildpath(),config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
