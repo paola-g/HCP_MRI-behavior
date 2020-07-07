@@ -2216,7 +2216,10 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
     cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
     measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
     rstring = get_rcode(config.fmriFile_dn)
-    fcFile    = op.join(FCDir,config.subject+'_'+prefix+config.fmriRun+'_seedFC.txt')
+    if not parcellationFile:
+        fcFile    = op.join(FCDir,config.fmriFile+'_seed_roiFC.txt')
+    else:
+        fcFile    = op.join(FCDir,config.fmriFile+'_seed_vFC.txt')
     maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
     if not config.maskParcelswithAll:     
         maskAll  = np.ones(np.shape(maskAll), dtype=bool)
@@ -2251,7 +2254,7 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
             else:
                 X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
                 seedTS = np.nanmean(X[np.where(seedParcel)[0],:],axis=0)
-                X = X[maskAll,:]
+                X = X[maskGM_,:]
             if config.doScrubbing:
                 censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
                 censored = np.atleast_1d(censored)
