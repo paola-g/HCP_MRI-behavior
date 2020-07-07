@@ -2698,7 +2698,7 @@ def runPipeline():
         masks = makeTissueMasks(overwrite=config.overwrite)
         maskAll, maskWM_, maskCSF_, maskGM_ = masks    
     else:
-        masks = [None, None, None, None] # I could pass at least maskAll and set the others to None
+        masks = [None, None, None, None] 
 
     if config.isCifti:
         # volume
@@ -2713,6 +2713,11 @@ def runPipeline():
             call(cmd,shell=True)
         data = pd.read_csv(config.fmriFile.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
     elif config.isGifti:
+        prefix = '_'+config.session if  hasattr(config,'session')  else ''
+        volFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
+        maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(overwrite=config.overwrite)
+        print('Loading [volume] data in memory... {}'.format(volFile))
+        volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         print('Loading [gifti] data in memory... {}'.format(config.fmriFile))
         giiData = nib.load(config.fmriFile)
         data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
@@ -2725,10 +2730,6 @@ def runPipeline():
         maskAll[constant_rows] = False
         masks[0] = maskAll
         data = data[maskAll,:]
-        prefix = '_'+config.session if  hasattr(config,'session')  else ''
-        volFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
-        print('Loading [volume] data in memory... {}'.format(volFile))
-        volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         #volData = None # TODO: CHECK
         #nTRs = data.shape[1]
         #nRows, nCols, nSlices, affine, header = None, None, None, None, None
