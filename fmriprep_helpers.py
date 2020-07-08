@@ -395,7 +395,7 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
 #  @return [tuple] whole brain, white matter, cerebrospinal fluid and gray matter masks
 #  
 def makeTissueMasks(overwrite=False,precomputed=False, maskThreshold=0.33):
-    if config.isCifti:
+    if config.isCifti or config.isGifti:
         prefix = '_'+config.session if  hasattr(config,'session')  else '' 
         fmriFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
     else:
@@ -2211,31 +2211,36 @@ def compute_vFC(overwrite=False):
 #  
 #  @param [bool] overwrite True if existing files should be overwritten
 #  
-def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellationName=None):
-    prefix = config.session+'_' if  hasattr(config,'session')  else ''
+def compute_seedFC(overwrite=False, seed=None, vFC=False, parcellationFile=None, parcellationName=None):
     FCDir = config.FCDir if  hasattr(config,'FCDir')  else outpath()
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
-    cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
-    measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
-    rstring = get_rcode(config.fmriFile_dn)
-    if not parcellationFile:
-        fcFile    = op.join(FCDir,config.fmriFile+'_seed_roiFC.txt')
+    if not vFC:
+        fcFile    = op.join(FCDir,op.basename(config.fmriFile)+'_seed_roiFC.txt')
     else:
-        fcFile    = op.join(FCDir,config.fmriFile+'_seed_vFC.txt')
-    maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
-    if not config.maskParcelswithAll:     
-        maskAll  = np.ones(np.shape(maskAll), dtype=bool)
-    seedParcel, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(seed, maskAll)
-    if config.maskParcelswithGM:
-        seedParcel[np.logical_not(maskGM_)] = 0;
-    if config.isCifti or config.isGifti:
-        prefix = '_'+config.session if  hasattr(config,'session')  else ''
-        inFile = op.join(buildpath(),config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
-        volFile = retrieve_preprocessed(inFile, config.Operations, outpath(), False, False)
-        if volFile is None:
-            sys.exit('Could not find preprocessed volumetric data to compute seed time series')
+        fcFile    = op.join(FCDir,op.basename(config.fmriFile)+'_seed_vFC.txt')
     if not op.isfile(fcFile) or overwrite:
-        if not parcellationFile:
+        # load seed parcel
+        maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
+        if not config.maskParcelswithAll:     
+            maskAll  = np.ones(np.shape(maskAll), dtype=bool)
+        seedParcel, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(seed, maskAll)
+        if config.maskParcelswithGM:
+            seedParcel[np.logical_not(maskGM_)] = 0;
+        # retrieve volumetric processed data
+        if config.isCifti or config.isGifti:
+            prefix = '_'+config.session if  hasattr(config,'session')  else ''
+            inFile = op.join(buildpath(),config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
+            volFile = retrieve_preprocessed(inFile, config.Operations, outpath(), False, False)
+            if volFile is None:
+                sys.exit('Could not find preprocessed volumetric data to compute seed time series')
+        else:
+            volFile = config.fmriFile_dn
+        rstring = get_rcode(config.fmriFile_dn)
+        # initialize FC estimator
+        cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
+        measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
+        if vFC: # compute voxel/vertex-wise FC
+            print('Computing voxel/vertex-wise FC')
             if config.isCifti:
                 volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
                 tsvFile = config.fmriFile_dn.replace('.dtseries.nii','.tsv')
@@ -2269,16 +2274,16 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
             corrVec = np.zeros(X.shape[0])
             for i in range(len(corrVec)):
                 corrVec[i] = np.squeeze(measure.fit_transform([np.vstack([seedTS, X[i,:]]).T]))[0,1]
-            # save as .txt
-        else:
+        else: # compute seed to ROI FC
+            print('Computing seed ROI to parcel FC')
+            prefix = config.session+'_' if  hasattr(config,'session')  else ''
             tsDir = op.join(outpath(),parcellationName,prefix+config.fmriRun+config.ext)
             alltsFile = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
-            volFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
-            volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll)
-            seedTS = np.nanmean(volData[np.where(seedParcel)[0],:],axis=0)
             if not op.isfile(alltsFile) or overwrite:
                 parcellate(overwrite)
                 ts = np.loadtxt(alltsFile)
+                volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll)
+                seedTS = np.nanmean(volData[np.where(seedParcel)[0],:],axis=0)
                 # censor time points that need censoring
                 if config.doScrubbing:
                     censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
@@ -2289,6 +2294,7 @@ def compute_seedFC(overwrite=False, seed=None, parcellationFile=None, parcellati
             corrVec = np.zeros(ts.shape[1])
             for i in range(len(corrVec)):
                 corrVec[i] = np.squeeze(measure.fit_transform([np.vstack([seedTS, ts[:,i]]).T]))[0,1]
+        # save as .txt
         np.savetxt(fcFile,corrVec,fmt='%.16f',delimiter=',')
 
 ## 
@@ -2306,10 +2312,10 @@ def plotFC(displayPlot=False,overwrite=False,seed=None,vFC=False):
     if not op.isfile(savePlotFile) or overwrite:
         if seed is not None:
             if vFC:
-                compute_seedFC(overwrite, seed)
+                compute_seedFC(overwrite, seed, vFC)
                 return
             else:
-                compute_seedFC(overwrite, seed, config.parcellationFile, config.parcellationName)
+                compute_seedFC(overwrite, seed, vFC, config.parcellationFile, config.parcellationName)
                 return
         else:
             if vFC:
@@ -2978,9 +2984,9 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         elif do_computeFC:
             if seed is not None:
                 if vFC:
-                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC,seed=seed)'
+                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC,seed=seed, vFC=vFC)'
                 else:
-                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC, seed=seed, parcellationFile=config.parcellationFile, parcellationName=config.parcellationName)'
+                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC, seed=seed, vFC=vFC, parcellationFile=config.parcellationFile, parcellationName=config.parcellationName)'
             else:
                 if vFC:
                     thispythonfn += 'compute_vFC(overwrite=overwriteFC)'
@@ -3040,9 +3046,9 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         elif do_computeFC:
             if seed is not None:
                 if vFC:
-                    compute_seedFC(overwriteFC, seed)
+                    compute_seedFC(overwriteFC, seed, vFC)
                 else:
-                    compute_seedFC(overwriteFC, seed, config.parcellationFile, config.parcellationName)
+                    compute_seedFC(overwriteFC, seed, vFC, config.parcellationFile, config.parcellationName)
             else:
                 if vFC:
                     compute_vFC(overwriteFC)
