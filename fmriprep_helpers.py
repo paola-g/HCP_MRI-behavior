@@ -1925,7 +1925,7 @@ def parcellate(overwrite=False):
             maskAll = np.ones(data.shape[0]).astype(bool)
             maskAll[constant_rows] = False
             data = data[maskAll,:]
-            allparcels = allparcels[maskAll,:] #TODO: check
+            allparcels = allparcels[maskAll] #TODO: check
         else:
             data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
         
@@ -2204,7 +2204,8 @@ def compute_vFC(overwrite=False):
         # correlation
         corrMat = np.squeeze(measure.fit_transform([X.T]))
         # save as .txt
-        np.savetxt(fcFile,corrMat,fmt='%.16f',delimiter=',')
+        results = {'corrMat':corrMat}
+        sio.savemat(fcFile, results)
 
 ## 
 #  @brief Compute voxel/vertex-wise functional connectivity matrix (output saved to file)
