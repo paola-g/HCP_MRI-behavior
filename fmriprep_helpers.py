@@ -1597,7 +1597,7 @@ def TemporalFiltering(niiImg, flavor, masks, imgInfo):
             x = data2.T
             x1 = np.zeros((NR, x.shape[1]))
             x2 = np.zeros((NR, x.shape[1]))
-            for i in range(x.shape[2]):
+            for i in range(x.shape[1]):
                 x1[:,i] = 2*x[0,i] - np.flipud(x[1:NR+1,i])
                 x2[:,i] = 2*x[-1,i] - np.flipud(x[-NR-1:-1,i])
             x = np.vstack([x1,x,x2])
@@ -1932,7 +1932,7 @@ def parcellate(overwrite=False):
         for iParcel in np.arange(config.nParcels):
             tsFile = op.join(tsDir,'parcel{:03d}.txt'.format(iParcel+1))
             if not op.isfile(tsFile) or overwrite:
-                np.savetxt(tsFile,np.nanmean(data[np.where(allparcels==iParcel+1)[0],:],axis=0),fmt='%.16f',delimiter='\n')
+                np.savetxt(tsFile,np.nanmean(data[np.where(allparcels==iParcel+1)[0],:],axis=0),fmt='%.6f',delimiter='\n')
 
         # concatenate all ts
         cmd = 'paste '+op.join(tsDir,'parcel???.txt')+' > '+alltsFile
@@ -1966,12 +1966,12 @@ def parcellate(overwrite=False):
         for iParcel in np.arange(config.nParcels):
             tsFile = op.join(tsDir,'parcel{:03d}_{}.txt'.format(iParcel+1,rstring))
             if not op.isfile(tsFile) or overwrite:
-                np.savetxt(tsFile,np.nanmean(data[np.where(allparcels==iParcel+1)[0],:],axis=0),fmt='%.16f',delimiter='\n')
+                np.savetxt(tsFile,np.nanmean(data[np.where(allparcels==iParcel+1)[0],:],axis=0),fmt='%.6f',delimiter='\n')
             # save all voxels in mask, with header indicating parcel number
             if config.save_voxelwise:
                 tsFileAll = op.join(tsDir,'parcel{:03d}_{}_all.txt'.format(iParcel+1,rstring))
                 if not op.isfile(tsFileAll) or overwrite:
-                    np.savetxt(tsFileAll,np.transpose(data[np.where(allparcels==iParcel+1)[0],:]),fmt='%.16f',delimiter=',',newline='\n')
+                    np.savetxt(tsFileAll,np.transpose(data[np.where(allparcels==iParcel+1)[0],:]),fmt='%.6f',delimiter=',',newline='\n')
         
         # concatenate all ts
         cmd = 'paste '+op.join(tsDir,'parcel???_{}.txt'.format(rstring))+' > '+alltsFile
@@ -2136,7 +2136,7 @@ def computeFC(overwrite=False):
         # correlation
         corrMat = np.squeeze(measure.fit_transform([ts]))
         # save as .txt
-        np.savetxt(fcFile,corrMat,fmt='%.16f',delimiter=',')
+        np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
     ###################
     # denoised
     ###################
@@ -2158,9 +2158,9 @@ def computeFC(overwrite=False):
         # np.fill_diagonal(corrMat,1)
         # np.fill_diagonal(corrMat,1)
         # save as .txt
-        np.savetxt(fcFile,corrMat,fmt='%.16f',delimiter=',')
+        np.savetxt(fcFile,corrMat,fmt='%.6f',delimiter=',')
         if FCDir:
-            np.savetxt(op.join(FCDir,config.subject+'_'+prefix+config.fmriRun+'_ts.txt'),ts,fmt='%.16f',delimiter=',')
+            np.savetxt(op.join(FCDir,config.subject+'_'+prefix+config.fmriRun+'_ts.txt'),ts,fmt='%.6f',delimiter=',')
 		
 ## 
 #  @brief Compute voxel/vertex-wise functional connectivity matrix (output saved to file)
@@ -2199,14 +2199,17 @@ def compute_vFC(overwrite=False):
         if config.doScrubbing:
             censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
             censored = np.atleast_1d(censored)
-            tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
+            tokeep = np.setdiff1d(np.arange(X.shape[1]),censored)
             X = X[:,tokeep]
         # correlation
-        corrMat = np.squeeze(measure.fit_transform([X.T]))
-        # save as .txt
-        results = {'corrMat':corrMat}
-        sio.savemat(fcFile, results)
-
+        with open(fcFile,'w') as f:
+            for i in range(X.shape[0]):
+                for j in range(X.shape[0]):
+                    corr_j = np.squeeze(measure.fit_transform([np.vstack([X[i,:], X[j,:]]).T]))[0,1]
+                    if j == (X.shape[0]):
+                        f.write('%.6f\n' % corr_j) 
+                    else:
+                        f.write('%.6f,' % corr_j) 
 ## 
 #  @brief Compute voxel/vertex-wise functional connectivity matrix (output saved to file)
 #  
@@ -2268,7 +2271,7 @@ def compute_seedFC(overwrite=False, seed=None, vFC=False, parcellationFile=None,
             if config.doScrubbing:
                 censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
                 censored = np.atleast_1d(censored)
-                tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
+                tokeep = np.setdiff1d(np.arange(X.shape[1]),censored)
                 X = X[:,tokeep]
                 seedTS = seedTS[tokeep]
             # correlation
@@ -2296,7 +2299,7 @@ def compute_seedFC(overwrite=False, seed=None, vFC=False, parcellationFile=None,
             for i in range(len(corrVec)):
                 corrVec[i] = np.squeeze(measure.fit_transform([np.vstack([seedTS, ts[:,i]]).T]))[0,1]
         # save as .txt
-        np.savetxt(fcFile,corrVec,fmt='%.16f',delimiter=',')
+        np.savetxt(fcFile,corrVec,fmt='%.6f',delimiter=',')
 
 ## 
 #  @brief Compute functional connectivity matrices before and after preprocessing and generate FC plot
@@ -2805,7 +2808,7 @@ def runPipeline():
     outFile = config.subject+'_'+prefix+config.fmriRun+'_prepro_'+rstring
     if config.isCifti:
         # write to text file
-        np.savetxt(op.join(outDir,outFile+'.tsv'),data, delimiter='\t', fmt='%.16f')
+        np.savetxt(op.join(outDir,outFile+'.tsv'),data, delimiter='\t', fmt='%.6f')
         # need to convert back to cifti
         cmd = 'wb_command -cifti-convert -from-text {} {} {}'.format(op.join(outDir,outFile+'.tsv'),
                                                                      config.fmriFile,
