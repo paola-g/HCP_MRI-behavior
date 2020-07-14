@@ -88,10 +88,8 @@ from nistats import design_matrix
 def buildpath():
     if hasattr(config, 'session') and config.session:
         return op.join(config.DATADIR, 'fmriprep', config.subject, config.session, 'func')
-#		config.subject+'_'+config.session+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
     else:
         return op.join(config.DATADIR, 'fmriprep', config.subject, 'func')
-#		config.subject+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
 
 #----------------------------------
 # function to build dinamycally output path (BIDS-like) 
@@ -2218,10 +2216,12 @@ def compute_vFC(overwrite=False):
 def compute_seedFC(overwrite=False, seed=None, vFC=False, parcellationFile=None, parcellationName=None):
     FCDir = config.FCDir if  hasattr(config,'FCDir')  else outpath()
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
+    seedName = op.basename(seed).split('.')[0]
+    fileName = op.basename(config.fmriFile).split('.')[0]
     if not vFC:
-        fcFile    = op.join(FCDir,op.basename(config.fmriFile)+'_seed_roiFC.txt')
+        fcFile    = op.join(FCDir,'{}_seed_{}_{}_FC.txt'.format(fileName,seedName, parcellationName))
     else:
-        fcFile    = op.join(FCDir,op.basename(config.fmriFile)+'_seed_vFC.txt')
+        fcFile    = op.join(FCDir,'{}_seed_{}_vFC.txt'.format(fileName,seedName))
     if not op.isfile(fcFile) or overwrite:
         # load seed parcel
         maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
