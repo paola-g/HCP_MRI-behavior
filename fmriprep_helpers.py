@@ -759,9 +759,20 @@ def checkXML(inFile, operations, params, resDir, isCifti=False, isGifti=False, u
                 continue
             else:    
                 rcode = xfile.replace('.xml','')
-                prefix = config.session+'_' if  hasattr(config,'session')  else ''
-                
-                return op.join(resDir,config.subject+'_'+prefix+config.fmriRun+'_prepro_'+rcode+ext)
+                tokens = op.basename(inFile).split('_')
+                subject = tokens[0]
+                if hasattr(config,'session'):
+                    prefix = tokens[1]+'_'
+                    fmriRun = tokens[2] + '_' + tokens[3] 
+                    space = tokens[4]
+                    suffix = '_'+tokens[5].replace(ext,'') if isGifti or isCifti else ''
+                else:
+                    prefix = ''
+                    fmriRun = tokens[1] + '_' + tokens[2] 
+                    space = tokens[3]
+                    suffix = '_'+tokens[4].replace(ext,'') if isGifti or isCifti else ''
+                outFile = subject+'_'+prefix+fmriRun+'_'+space+suffix+'_prepro_'+rcode+ext
+                return op.join(resDir,outFile)
     return None
 	
 ## 
@@ -1446,7 +1457,10 @@ def TissueRegression(niiImg, flavor, masks, imgInfo):
                              sqmeanWM[:,np.newaxis], sqmeanCSF[:,np.newaxis], 
                              sqdtWM[:,np.newaxis], sqdtCSF[:,np.newaxis]),axis=1)    
     elif flavor[0] == 'GM':
-        meanGM = np.mean(np.float32(volData[maskGM_,:]),axis=0)
+        if config.isCifti or config.isGifti:
+            meanGM = np.mean(np.float32(niiImg[0]),axis=0)
+        else:
+            meanGM = np.mean(np.float32(volData[maskGM_,:]),axis=0)
         meanGM = meanGM - np.mean(meanGM)
         meanGM = meanGM/max(meanGM)
         X = meanGM[:,np.newaxis]
@@ -1882,6 +1896,8 @@ def parcellate(overwrite=False):
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
     tsDir = op.join(tsDir,prefix+config.fmriRun+config.ext)
     if not op.isdir(tsDir): mkdir(tsDir)
+    if config.isGifti:
+        this_hemi = 'hemi-L' if 'hemi-L' in config.fmriFile else 'hemi-R'
 
     #####################
     # read parcels
@@ -1905,7 +1921,8 @@ def parcellate(overwrite=False):
     ####################
     # original data
     ####################
-    alltsFile = op.join(tsDir,'allParcels.txt')
+    suffix = '_'+this_hemi if config.isGifti else ''
+    alltsFile = op.join(tsDir,'allParcels'+suffix+'.txt')
     if not op.isfile(alltsFile) or overwrite:
         # read original volume
         if config.isCifti:
@@ -1928,19 +1945,19 @@ def parcellate(overwrite=False):
             data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
         
         for iParcel in np.arange(config.nParcels):
-            tsFile = op.join(tsDir,'parcel{:03d}.txt'.format(iParcel+1))
+            tsFile = op.join(tsDir,'parcel{:03d}'.format(iParcel+1)+suffix+'.txt')
             if not op.isfile(tsFile) or overwrite:
                 np.savetxt(tsFile,np.nanmean(data[np.where(allparcels==iParcel+1)[0],:],axis=0),fmt='%.6f',delimiter='\n')
 
         # concatenate all ts
-        cmd = 'paste '+op.join(tsDir,'parcel???.txt')+' > '+alltsFile
+        cmd = 'paste '+op.join(tsDir,'parcel???'+suffix+'.txt')+' > '+alltsFile
         call(cmd, shell=True)
 
     ####################
     # denoised data
     ####################
     rstring      = get_rcode(config.fmriFile_dn)
-    alltsFile    = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+    alltsFile    = op.join(tsDir,'allParcels'+suffix+'_{}.txt'.format(rstring))
     if (not op.isfile(alltsFile)) or overwrite:
         # read denoised volume
         if config.isCifti:
@@ -1962,17 +1979,17 @@ def parcellate(overwrite=False):
             data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
                    
         for iParcel in np.arange(config.nParcels):
-            tsFile = op.join(tsDir,'parcel{:03d}_{}.txt'.format(iParcel+1,rstring))
+            tsFile = op.join(tsDir,'parcel{:03d}'.format(iParcel+1)+suffix+'_{}.txt'.format(rstring))
             if not op.isfile(tsFile) or overwrite:
                 np.savetxt(tsFile,np.nanmean(data[np.where(allparcels==iParcel+1)[0],:],axis=0),fmt='%.6f',delimiter='\n')
             # save all voxels in mask, with header indicating parcel number
             if config.save_voxelwise:
-                tsFileAll = op.join(tsDir,'parcel{:03d}_{}_all.txt'.format(iParcel+1,rstring))
+                tsFileAll = op.join(tsDir,'parcel{:03d}'.format(iParcel+1)+suffix+'_{}_all.txt'.format(rstring))
                 if not op.isfile(tsFileAll) or overwrite:
                     np.savetxt(tsFileAll,np.transpose(data[np.where(allparcels==iParcel+1)[0],:]),fmt='%.6f',delimiter=',',newline='\n')
         
         # concatenate all ts
-        cmd = 'paste '+op.join(tsDir,'parcel???_{}.txt'.format(rstring))+' > '+alltsFile
+        cmd = 'paste '+op.join(tsDir,'parcel???'+suffix+'_{}.txt'.format(rstring))+' > '+alltsFile
         call(cmd, shell=True)
 
 ## 
@@ -2117,20 +2134,33 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
 #  
 def computeFC(overwrite=False):
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
+    if config.isGifti:
+        this_hemi = 'hemi-L' if 'hemi-L' in config.fmriFile else 'hemi-R'
+        other_hemi = 'hemi-R' if 'hemi-L' in config.fmriFile else 'hemi-L'
+    tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     FCDir = config.FCDir if  hasattr(config,'FCDir')  else outpath()
     if FCDir and not op.isdir(FCDir): makedirs(FCDir)
-    tsDir = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     cov_estimator = LedoitWolf(assume_centered=False, block_size=1000, store_precision=False)
     measure = connectome.ConnectivityMeasure(cov_estimator=cov_estimator,kind = config.fcType,vectorize=False)
     ###################
     # original
     ###################
-    alltsFile = op.join(tsDir,'allParcels.txt')
+    suffix = '_'+this_hemi if config.isGifti else ''
+    alltsFile = op.join(tsDir,'allParcels'+suffix+'.txt')
     if not op.isfile(alltsFile) or overwrite:
         parcellate(overwrite)
-    fcFile     = alltsFile.replace('.txt','_Pearson.txt')
+    if config.isGifti and not op.isfile(alltsFile.replace(this_hemi, other_hemi)):
+        print('Both hemispheres needed to compute FC. Skipping FC computation.') 
+        print('missing file 1:',alltsFile.replace(this_hemi, other_hemi))
+        return
+    elif config.isGifti:
+        tsLR = op.join(tsDir,'allParcels.txt')    
+        cmd = 'paste '+op.join(tsDir,'allParcels_hemi-?.txt')+' > '+tsLR
+        call(cmd, shell=True)
+    fcFile = op.join(tsDir,'allParcels_Pearson.txt')
     if not op.isfile(fcFile) or overwrite:
-        ts = np.loadtxt(alltsFile)
+        ts = np.loadtxt(tsLR) if config.isGifti else np.loadtxt(alltsFile)
+        ts[np.isnan(ts)] = 0
         # correlation
         corrMat = np.squeeze(measure.fit_transform([ts]))
         # save as .txt
@@ -2139,12 +2169,29 @@ def computeFC(overwrite=False):
     # denoised
     ###################
     rstring = get_rcode(config.fmriFile_dn)
-    alltsFile = op.join(tsDir,'allParcels_{}.txt'.format(rstring))
+    alltsFile = op.join(tsDir,'allParcels'+suffix+'_{}.txt'.format(rstring))
     if not op.isfile(alltsFile) or overwrite:
         parcellate(overwrite)
-    fcFile    = alltsFile.replace('.txt','_Pearson.txt')
+    if config.isGifti:
+        other_hemi_proc = checkXML(config.fmriFile.replace(this_hemi,other_hemi),config.steps,config.Flavors,outpath(),config.isCifti,config.isGifti) 
+        if not other_hemi_proc:
+            print('Both hemispheres needed to compute FC. Skipping FC computation.') 
+            print('missing file 2:',config.fmriFile.replace(this_hemi,other_hemi))
+            return
+        other_rstring = get_rcode(other_hemi_proc)
+        if not op.isfile(alltsFile.replace(this_hemi,other_hemi).replace(rstring, other_rstring)):
+            print('Both hemispheres needed to compute FC. Skipping FC computation.') 
+            print('missing file 3:',alltsFile.replace(this_hemi, other_hemi).replace(rstring, other_rstring))
+            return
+        tsLR = op.join(tsDir,'allParcels_{}.txt'.format(rstring))    
+        if 'L' in this_hemi:
+            cmd = 'paste {} {} > {}'.format(alltsFile, alltsFile.replace(this_hemi,other_hemi).replace(rstring, other_rstring), tsLR)
+        else:
+            cmd = 'paste {} {} > {}'.format(alltsFile.replace(this_hemi,other_hemi).replace(rstring, other_rstring), alltsFile, tsLR)
+        call(cmd, shell=True)
+    fcFile = op.join(tsDir,'allParcels_{}_Pearson.txt'.format(rstring))
     if not op.isfile(fcFile) or overwrite:
-        ts = np.loadtxt(alltsFile)
+        ts = np.loadtxt(tsLR) if config.isGifti else np.loadtxt(alltsFile)
         # censor time points that need censoring
         if config.doScrubbing:
             censored = np.loadtxt(op.join(outpath(), 'Censored_TimePoints.txt'), dtype=np.dtype(np.int32))
@@ -2152,6 +2199,7 @@ def computeFC(overwrite=False):
             tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
             ts = ts[tokeep,:]
         # correlation
+        ts[np.isnan(ts)] = 0
         corrMat = np.squeeze(measure.fit_transform([ts]))
         # np.fill_diagonal(corrMat,1)
         # np.fill_diagonal(corrMat,1)
@@ -2181,6 +2229,12 @@ def compute_vFC(overwrite=False):
                 call(cmd,shell=True)
             X = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
         elif config.isGifti:
+            this_hemi = 'hemi-L' if 'hemi-L' in config.fmriFile else 'hemi-R'
+            other_hemi = 'hemi-R' if 'hemi-L' in config.fmriFile else 'hemi-L'
+            other_hemi_proc = checkXML(config.fmriFile.replace(this_hemi,other_hemi),config.steps,config.Flavors,outpath(),config.isCifti,config.isGifti) 
+            if not other_hemi_proc:
+                print('Both hemispheres needed to compute FC. Skipping FC computation.') 
+                return
             giiData = nib.load(config.fmriFile_dn)
             X = np.vstack([np.array(g.data) for g in giiData.darrays]).T
             constant_rows = np.where(np.all([X[i,:]==X[i,0] for i in range(X.shape[0])],axis=1))[0]
@@ -2189,6 +2243,15 @@ def compute_vFC(overwrite=False):
             maskAll = np.ones(X.shape[0]).astype(bool)
             maskAll[constant_rows] = False
             X = X[maskAll,:]
+            giiData = nib.load(other_hemi_proc)
+            X2 = np.vstack([np.array(g.data) for g in giiData.darrays]).T
+            constant_rows = np.where(np.all([X2[i,:]==X2[i,0] for i in range(X2.shape[0])],axis=1))[0]
+            nan_rows = np.where(np.isnan(X2).all(axis=1))
+            constant_rows = np.union1d(constant_rows,nan_rows)
+            maskAll = np.ones(X2.shape[0]).astype(bool)
+            maskAll[constant_rows] = False
+            X2 = X2[maskAll,:]
+            X = np.vstack([X,X2]) if 'L' in this_hemi else np.vstack([X2,X])
         else:
             maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
             X, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
@@ -2200,16 +2263,13 @@ def compute_vFC(overwrite=False):
             tokeep = np.setdiff1d(np.arange(X.shape[1]),censored)
             X = X[:,tokeep]
         # correlation
-        with open(fcFile,'w') as f:
-            for i in range(X.shape[0]):
-                for j in range(X.shape[0]):
-                    corr_j = np.squeeze(measure.fit_transform([np.vstack([X[i,:], X[j,:]]).T]))[0,1]
-                    if j == (X.shape[0]):
-                        f.write('%.6f\n' % corr_j) 
-                    else:
-                        f.write('%.6f,' % corr_j) 
+        corrMat = np.squeeze(measure.fit_transform([X.T]))
+        # save as .mat
+        results = {'corrMat':corrMat}
+        sio.savemat(fcFile, results)
+
 ## 
-#  @brief Compute voxel/vertex-wise functional connectivity matrix (output saved to file)
+#  @brief Compute seed functional connectivity matrix (output saved to file)
 #  
 #  @param [bool] overwrite True if existing files should be overwritten
 #  
@@ -2328,7 +2388,9 @@ def plotFC(displayPlot=False,overwrite=False,seed=None,vFC=False):
             else:
                 computeFC(overwrite)
                 return
-
+    if not op.isfile(fcFile) or not op.isfile(fcFile_dn):
+        print('Could not find FC data to plot. Skipping plotFC.')
+        return
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
     tsDir      = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     fcFile     = op.join(tsDir,'allParcels_Pearson.txt')
@@ -2732,10 +2794,10 @@ def runPipeline():
         data = pd.read_csv(config.fmriFile.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
     elif config.isGifti:
         prefix = '_'+config.session if  hasattr(config,'session')  else ''
-        volFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
-        maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(overwrite=config.overwrite)
-        print('Loading [volume] data in memory... {}'.format(volFile))
-        volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
+        #volFile = op.join(buildpath(), config.subject+prefix+'_'+config.fmriRun+'_space-'+config.space+'_desc-preproc_bold.nii.gz')
+        #maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(overwrite=config.overwrite)
+        #print('Loading [volume] data in memory... {}'.format(volFile))
+        #volData, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(volFile, maskAll) 
         print('Loading [gifti] data in memory... {}'.format(config.fmriFile))
         giiData = nib.load(config.fmriFile)
         data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
@@ -2748,10 +2810,10 @@ def runPipeline():
         maskAll[constant_rows] = False
         masks[0] = maskAll
         data = data[maskAll,:]
-        #volData = None # TODO: CHECK
-        #nTRs = data.shape[1]
-        #nRows, nCols, nSlices, affine, header = None, None, None, None, None
-        #TR = float(giiData.darrays[0].metadata['TimeStep'])/1000
+        volData = None # TODO: CHECK
+        nTRs = data.shape[1]
+        nRows, nCols, nSlices, affine, header = None, None, None, None, None
+        TR = float(giiData.darrays[0].metadata['TimeStep'])/1000
     else:
         volFile = config.fmriFile
         print('Loading [volume] data in memory... {}'.format(config.fmriFile))
@@ -2805,7 +2867,8 @@ def runPipeline():
     rstring = ''.join(random.SystemRandom().choice(string.ascii_lowercase +string.ascii_uppercase + string.digits) for _ in range(8))
     outDir  = outpath()
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
-    outFile = config.subject+'_'+prefix+config.fmriRun+'_prepro_'+rstring
+    space = config.surface if (config.isGifti or config.isCifti) else config.space
+    outFile = config.subject+'_'+prefix+config.fmriRun+'_space-'+space+'_prepro_'+rstring
     if config.isCifti:
         # write to text file
         np.savetxt(op.join(outDir,outFile+'.tsv'),data, delimiter='\t', fmt='%.6f')
@@ -2913,6 +2976,7 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
                 config.Flavors[cstep].append(opr[2])
             prev_step = opr[1]                
     precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath(),config.isCifti,config.isGifti) 
+    print('precomputed file:',precomputed)
 
     if precomputed and not config.overwrite:
         config.fmriFile_dn = precomputed
