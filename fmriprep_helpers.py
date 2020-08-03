@@ -1918,6 +1918,7 @@ def parcellate(overwrite=False):
         if config.maskParcelswithGM:
             allparcels[np.logical_not(maskGM_)] = 0;
     
+
     ####################
     # original data
     ####################
