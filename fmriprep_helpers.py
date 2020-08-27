@@ -1928,13 +1928,31 @@ def parcellate(overwrite=False):
     if not op.isfile(alltsFile) or overwrite:
         # read original volume
         if config.isCifti:
-            tsvFile = config.fmriFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
+            if config.smoothing:
+                smoothed_file = config.fmriFile.replace(config.ext,'_smooth_{}fwhm{}'.format(config.smoothing, config.ext))
+                if not op.isfile(smoothed_file):
+                    cmd = 'wb_command -cifti-smoothing {} {} {} COLUMN {}'.format(
+                       config.fmriFile_dn, config.smoothing, config.smoothing, smoothed_file)
+                    call(cmd, shell=True)
+                ciftiFile = smoothed_file
+            else:
+                ciftiFile = config.fmriFile
+            tsvFile = ciftiFile.replace('.dtseries.nii','.tsv').replace(buildpath(),outpath())
             if not op.isfile(tsvFile):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile,tsvFile)
                 call(cmd, shell=True)
             data = pd.read_csv(tsvFile,sep='\t',header=None,dtype=np.float32).values
         elif config.isGifti:
-            giiData = nib.load(config.fmriFile)
+            if config.smoothing:
+                smoothed_file = config.fmriFile.replace(config.ext,'_smooth_{}fwhm{}'.format(config.smoothing, config.ext))
+                if not op.isfile(smoothed_file):
+                    hm = 'lh' if this_hemi == 'hemi-L' else 'rh'
+                    cmd = 'mri_surf2surf --hemi {} --s {} --sval {} --cortex --fwhm-trg {} --tval {}'.format(
+                       hm, config.space.split('_')[0],config.fmriFile, config.smoothing, smoothed_file)
+                    call(cmd, shell=True)
+                giiData = nib.load(smoothed_file)
+            else:
+                giiData = nib.load(config.fmriFile)
             data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
             constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
             nan_rows = np.where(np.isnan(data).all(axis=1))
@@ -1969,13 +1987,32 @@ def parcellate(overwrite=False):
     if (not op.isfile(alltsFile)) or overwrite:
         # read denoised volume
         if config.isCifti:
-            if not op.isfile(config.fmriFile_dn.replace('.dtseries.nii','.tsv')):
+            if config.smoothing:
+                smoothed_file = config.fmriFile_dn.replace(config.ext,'_smooth_{}fwhm{}'.format(config.smoothing, config.ext))
+                if not op.isfile(smoothed_file):
+                    hm = 'lh' if this_hemi == 'hemi-L' else 'rh'
+                    cmd = 'wb_command -cifti-smoothing {} {} {} COLUMN {}'.format(
+                       config.fmriFile_dn, config.smoothing, config.smoothing, smoothed_file)
+                    call(cmd, shell=True)
+                ciftiFile = smoothed_file
+            else:
+                ciftiFile = config.fmriFile_dn
+            if not op.isfile(ciftiFile.replace('.dtseries.nii','.tsv')):
                 cmd = 'wb_command -cifti-convert -to-text {} {}'.format(config.fmriFile_dn,
                                                                            config.fmriFile_dn.replace('.dtseries.nii','.tsv'))
                 call(cmd, shell=True)
             data = pd.read_csv(config.fmriFile_dn.replace('.dtseries.nii','.tsv'),sep='\t',header=None,dtype=np.float32).values
         elif config.isGifti:
-            giiData = nib.load(config.fmriFile_dn)
+            if config.smoothing:
+                smoothed_file = config.fmriFile_dn.replace(config.ext,'_smooth_{}fwhm{}'.format(config.smoothing, config.ext))
+                if not op.isfile(smoothed_file):
+                    hm = 'lh' if this_hemi == 'hemi-L' else 'rh'
+                    cmd = 'mri_surf2surf --hemi {} --s {} --sval {} --cortex --fwhm-trg {} --tval {}'.format(
+                       hm, config.space.split('_')[0],config.fmriFile_dn, config.smoothing, smoothed_file)
+                    call(cmd, shell=True)
+                giiData = nib.load(smoothed_file)
+            else:
+                giiData = nib.load(config.fmriFile_dn)
             data = np.vstack([np.array(g.data) for g in giiData.darrays]).T
             constant_rows = np.where(np.all([data[i,:]==data[i,0] for i in range(data.shape[0])],axis=1))[0]
             nan_rows = np.where(np.isnan(data).all(axis=1))
