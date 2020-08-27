@@ -31,6 +31,8 @@ class config(object):
     n_contiguous       = 5 # if scrubbing is requested, minimum number of consecutive time points to survive scrubbing
     fcType             = 'correlation' # one of {"correlation", "partial correlation", "tangent", "covariance", "precision"}
     headradius         = 50 # 50mm as in Powers et al. 2012
+    smoothing          = None
+    smoothSeed         = False
     # these variables are initialized here and used later in the pipeline, do not change
     filtering   = []
     doScrubbing = False
@@ -1918,7 +1920,6 @@ def parcellate(overwrite=False):
         if config.maskParcelswithGM:
             allparcels[np.logical_not(maskGM_)] = 0;
     
-
     ####################
     # original data
     ####################
@@ -1943,7 +1944,13 @@ def parcellate(overwrite=False):
             data = data[maskAll,:]
             allparcels = allparcels[maskAll] #TODO: check
         else:
-            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
+            if config.smoothing:
+                img = nib.load(config.fmriFile)
+                nRows, nCols, nSlices, nTRs = img.header.get_data_shape()
+                img = image.smooth_img(img,config.smoothing)
+                data = np.asarray(img.dataobj).reshape((nRows*nCols*nSlices,nTRs), order='F')
+            else:
+                data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile, maskAll)
         
         for iParcel in np.arange(config.nParcels):
             tsFile = op.join(tsDir,'parcel{:03d}'.format(iParcel+1)+suffix+'.txt')
@@ -1977,7 +1984,13 @@ def parcellate(overwrite=False):
             maskAll[constant_rows] = False
             data = data[maskAll,:]
         else:
-            data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
+            if config.smoothing:
+                img = nib.load(config.fmriFile_dn)
+                nRows, nCols, nSlices, nTRs = img.header.get_data_shape()
+                img = image.smooth_img(img,config.smoothing)
+                data = np.asarray(img.dataobj).reshape((nRows*nCols*nSlices,nTRs), order='F')
+            else:
+                data, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(config.fmriFile_dn, maskAll)
                    
         for iParcel in np.arange(config.nParcels):
             tsFile = op.join(tsDir,'parcel{:03d}'.format(iParcel+1)+suffix+'_{}.txt'.format(rstring))
