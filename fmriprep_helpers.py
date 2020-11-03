@@ -16,7 +16,6 @@ class config(object):
     preWhitening       = False
     maskParcelswithAll = True
     save_voxelwise     = False
-    useNative          = False
     parcellationName   = ''
     parcellationFile   = ''
     outDir             = 'rsDenoise'
@@ -119,10 +118,10 @@ def get_confounds():
         return config.confounds
     if hasattr(config, 'session') and config.session:
         confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, config.session,'func', 
-		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
+		config.subject+'_'+config.session+'_'+config.fmriRun+'_desc-confounds_timeseries.tsv')
     else:
         confoundsFile =  op.join(config.DATADIR, 'fmriprep', config.subject, 'func', 
-		config.subject+'_'+config.fmriRun+'_desc-confounds_regressors.tsv')
+		config.subject+'_'+config.fmriRun+'_desc-confounds_timeseries.tsv')
     data = pd.read_csv(confoundsFile, delimiter='\t')
     data.replace('n/a', 0, inplace=True)
     config.confounds = data
@@ -151,7 +150,16 @@ config.operationDict = {
         ['TemporalFiltering',       4, ['Butter', 0.009, 0.08]],
         ['Scrubbing',               5, ['FD', 0.25]]
         ],
-     'NSF': [ # our CompCor, fmriprep's DCT (highpass)
+     'NSF': [ # preregistered
+        ['VoxelNormalization',      1, ['demean']],
+        ['Detrending',              2, ['poly', 2, 'wholebrain']],
+        ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
+        ['MotionRegression',        3, ['ICA-AROMA']],
+        ['GlobalSignalRegression',  3, ['GS']],
+        ['TemporalFiltering',       3, ['DCT', 0.008]],
+        ['Scrubbing',               5, ['FDmultiband', 0.25]]
+        ],
+     'NSF1': [ # our CompCor, fmriprep's DCT (highpass)
         ['VoxelNormalization',      1, ['demean']],
         ['Detrending',              2, ['poly', 2, 'wholebrain']],
         ['TissueRegression',        3, ['CompCor', 5, 'WMCSF', 'wholebrain']],
@@ -707,6 +715,32 @@ def fnSubmitToCluster(strScript, strJobFolder, strJobUID, resources):
     # execute the command
     cmdOut = check_output(strCommand, shell=True)
     return cmdOut.split()[2]    
+
+def prepareJobArrayFromJobList():
+    config.tStamp = timestamp()
+    # make directory
+    mkdir('tmp{}'.format(config.tStamp))
+    # write a temporary file with the list of scripts to execute as an array job
+    with open(op.join('tmp{}'.format(config.tStamp),'scriptlist'),'w') as f:
+        f.write('\n'.join(config.scriptlist))
+    # write the .qsub file
+    with open(op.join('tmp{}'.format(config.tStamp),'qsub'),'w') as f:
+        f.write('#!/bin/bash\n')
+        f.write('#$ -S /bin/bash\n')
+        f.write('#$ -t 1-{} -tc 7\n'.format(len(config.scriptlist)))
+        f.write('#$ -cwd -V -N tmp{}\n'.format(config.tStamp))
+        f.write('#$ -e {}\n'.format(op.join('tmp{}'.format(config.tStamp),'err')))
+        f.write('#$ -o {}\n'.format(op.join('tmp{}'.format(config.tStamp),'out')))
+        f.write('#$ {}\n'.format(config.sgeopts))
+        f.write('SCRIPT=$(awk "NR==$SGE_TASK_ID" {})\n'.format(op.join('tmp{}'.format(config.tStamp),'scriptlist')))
+        f.write('bash $SCRIPT\n')
+    strCommand = 'qsub {}'.format(op.join('tmp{}'.format(config.tStamp),'qsub'))
+    # write down the command to a file in the job folder
+    with open('cmd','w+') as f:
+        f.write(strCommand+'\n')
+    
+    config.scriptlist = []
+    return
 
 ## 
 #  @brief Return list of files ordered by edit time
@@ -3064,18 +3098,31 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         thispythonfn += 'print("=========================")\n'
         thispythonfn += 'config.subject          = "{}"\n'.format(config.subject)
         thispythonfn += 'config.DATADIR          = "{}"\n'.format(config.DATADIR)
-        thispythonfn += 'config.outDir          = "{}"\n'.format(config.outDir)
+        thispythonfn += 'config.outDir           = "{}"\n'.format(config.outDir)
         thispythonfn += 'config.fmriRun          = "{}"\n'.format(config.fmriRun)
-        thispythonfn += 'config.useNative        = {}\n'.format(config.useNative)
         thispythonfn += 'config.pipelineName     = "{}"\n'.format(config.pipelineName)
         thispythonfn += 'config.overwrite        = {}\n'.format(config.overwrite)
         thispythonfn += 'overwriteFC             = {}\n'.format(overwriteFC)
-        thispythonfn += 'seed                    = {}\n'.format(seed)
+        if seed is not None:
+            thispythonfn += 'seed                = "{}"\n'.format(seed)
+        else:
+            thispythonfn += 'seed                    = {}\n'.format(seed)
         thispythonfn += 'vFC                     = {}\n'.format(vFC)
         thispythonfn += 'config.queue            = {}\n'.format(config.queue)
         thispythonfn += 'config.preWhitening     = {}\n'.format(config.preWhitening)
         thispythonfn += 'config.isCifti          = {}\n'.format(config.isCifti)
         thispythonfn += 'config.isGifti          = {}\n'.format(config.isGifti)
+        thispythonfn += 'config.space            = "{}"\n'.format(config.space)
+        thispythonfn += 'config.surface          = "{}"\n'.format(config.surface)
+        thispythonfn += 'config.n_contiguous     = {}\n'.format(config.n_contiguous)
+        thispythonfn += 'config.headradius       = {}\n'.format(config.headradius)
+        thispythonfn += 'config.fcType           = "{}"\n'.format(config.fcType)
+        thispythonfn += 'config.smoothing        = {}\n'.format(config.smoothing)
+        thispythonfn += 'config.smoothSeed       = {}\n'.format(config.smoothSeed)
+        thispythonfn += 'config.FCDir            = "{}"\n'.format(config.FCDir)
+        thispythonfn += 'config.preprocessing    = "{}"\n'.format(config.preprocessing)
+        thispythonfn += 'config.save_voxelwise   = {}\n'.format(config.save_voxelwise)
+        thispythonfn += 'config.interpolation    = "{}"\n'.format(config.interpolation)
         thispythonfn += 'config.Operations       = {}\n'.format(config.Operations)
         thispythonfn += 'config.ext              = "{}"\n'.format(config.ext)
         thispythonfn += 'config.fmriFile         = "{}"\n'.format(config.fmriFile)
