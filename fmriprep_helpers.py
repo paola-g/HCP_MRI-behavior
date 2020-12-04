@@ -1258,6 +1258,7 @@ def Scrubbing(niiImg, flavor, masks, imgInfo):
         nyq = 0.5*1/TR
         low = 0.2/nyq
         high = 0.5/nyq
+        print('FDmultiband:',TR,n,low,high)
         i, u = signal.butter(10, [low,high], btype='bandstop')
         data = get_confounds() 
         motpars = np.array(data.loc[:,('trans_x', 'trans_y', 'trans_z', 'rot_x', 'rot_y', 'rot_z')])
@@ -1926,6 +1927,7 @@ def makeGrayPlot(displayPlot=False,overwrite=False):
 #  @brief Apply parcellation (output saved to file)
 #  
 def parcellate(overwrite=False):
+    print('parcellate()')
     # After preprocessing, functional connectivity is computed
     tsDir = op.join(outpath(),config.parcellationName)
     if not op.isdir(tsDir): mkdir(tsDir)
@@ -2218,6 +2220,7 @@ def getAllFC(subjectList,runs,sessions=None,parcellation=None,operations=None,ou
 #  @param [bool] overwrite True if existing files should be overwritten
 #  
 def computeFC(overwrite=False):
+    print('computeFC')
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
     if config.isGifti:
         this_hemi = 'hemi-L' if 'hemi-L' in config.fmriFile else 'hemi-R'
@@ -2457,34 +2460,29 @@ def compute_seedFC(overwrite=False, seed=None, vFC=False, parcellationFile=None,
 #     
 def plotFC(displayPlot=False,overwrite=False,seed=None,vFC=False):
     savePlotFile=config.fmriFile_dn.replace(config.ext,'_'+config.parcellationName+'_fcMat.png')
-
-    if not op.isfile(savePlotFile) or overwrite:
+    if not op.isfile(savePlotFile):
+        print('plotFC')
         if seed is not None:
             if vFC:
                 compute_seedFC(overwrite, seed, vFC)
-                return
             else:
                 compute_seedFC(overwrite, seed, vFC, config.parcellationFile, config.parcellationName)
-                return
         else:
             if vFC:
                 compute_vFC(overwrite)
-                return
             else:
                 computeFC(overwrite)
-                return
-    if not op.isfile(fcFile) or not op.isfile(fcFile_dn):
-        print('Could not find FC data to plot. Skipping plotFC.')
-        return
     prefix = config.session+'_' if  hasattr(config,'session')  else ''
     tsDir      = op.join(outpath(),config.parcellationName,prefix+config.fmriRun+config.ext)
     fcFile     = op.join(tsDir,'allParcels_Pearson.txt')
     fcMat      = np.genfromtxt(fcFile,delimiter=",")
     rstring    = get_rcode(config.fmriFile_dn)
     fcFile_dn  = op.join(tsDir,'allParcels_{}_Pearson.txt'.format(rstring))
+    if not op.isfile(fcFile) or not op.isfile(fcFile_dn):
+        print('Could not find FC data to plot. Skipping plotFC.')
+        return
     fcMat_dn   = np.genfromtxt(fcFile_dn,delimiter=",")
     
-    # if not op.isfile(savePlotFile) or overwrite:
     fig = plt.figure(figsize=(20,7.5))
     ####################
     # original, Pearson
@@ -3061,8 +3059,6 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
                 config.Flavors[cstep].append(opr[2])
             prev_step = opr[1]                
     precomputed = checkXML(config.fmriFile,config.steps,config.Flavors,outpath(),config.isCifti,config.isGifti) 
-    print('precomputed file:',precomputed)
-
     if precomputed and not config.overwrite:
         config.fmriFile_dn = precomputed
         if (not do_computeFC) and (not do_plotFC) and (not do_makeGrayPlot):
