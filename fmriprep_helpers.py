@@ -382,7 +382,6 @@ def load_img(volFile,maskAll=None,unzip=config.useMemMap):
     try:
         nRows, nCols, nSlices, nTRs = img.header.get_data_shape()
     except:
-        print
         nRows, nCols, nSlices = img.header.get_data_shape()
         nTRs = 1
     TR = img.header.structarr['pixdim'][4]
