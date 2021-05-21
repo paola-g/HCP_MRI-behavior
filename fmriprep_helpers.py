@@ -815,7 +815,9 @@ def checkXML(inFile, operations, params, resDir, isCifti=False, isGifti=False, u
                     prefix = ''
                     fmriRun = tokens[1] + '_' + tokens[2] 
                     space = tokens[3]
-                    suffix = '_'+tokens[4].replace(ext,'') if isGifti or isCifti else ''
+                    #line below might differ according to fmriprep version
+                    #suffix = '_'+tokens[4].replace(ext,'') if isGifti or isCifti else ''
+                    suffix = '_'+tokens[4].replace(ext,'')
                 outFile = subject+'_'+prefix+fmriRun+'_'+space+suffix+'_prepro_'+rcode+ext
                 return op.join(resDir,outFile)
     return None
