@@ -2379,6 +2379,7 @@ def compute_seedFC(overwrite=False, seed=None, vFC=False, parcellationFile=None,
         fcFile    = op.join(FCDir,'{}_seed_{}_{}_FC.txt'.format(fileName,seedName, parcellationName))
     else:
         fcFile    = op.join(FCDir,'{}_seed_{}_vFC.txt'.format(fileName,seedName))
+    maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
     if not op.isfile(fcFile) or overwrite:
         seedParcel, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(seed, None)
         # retrieve volumetric processed data
