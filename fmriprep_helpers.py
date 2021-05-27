@@ -3153,14 +3153,14 @@ def runPipelinePar(launchSubproc=False,overwriteFC=False,cleanup=True,do_makeGra
         elif do_computeFC:
             if seed is not None:
                 if vFC:
-                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC,seed=seed, vFC=vFC)'
+                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC,seed=seed, vFC=vFC)\n'
                 else:
-                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC, seed=seed, vFC=vFC, parcellationFile=config.parcellationFile, parcellationName=config.parcellationName)'
+                    thispythonfn += 'compute_seedFC(overwrite=overwriteFC, seed=seed, vFC=vFC, parcellationFile=config.parcellationFile, parcellationName=config.parcellationName)\n'
             else:
                 if vFC:
-                    thispythonfn += 'compute_vFC(overwrite=overwriteFC)'
+                    thispythonfn += 'compute_vFC(overwrite=overwriteFC)\n'
                 else:
-                    thispythonfn += 'computeFC(overwrite=overwriteFC)'
+                    thispythonfn += 'computeFC(overwrite=overwriteFC)\n'
         if cleanup:
             if config.useMemMap:
                 thispythonfn += 'try:\n    remove(config.fmriFile.replace(".gz",""))\nexcept OSError:\n    pass\n'
