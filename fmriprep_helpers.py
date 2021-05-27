@@ -2383,7 +2383,7 @@ def compute_seedFC(overwrite=False, seed=None, vFC=False, parcellationFile=None,
         fcFile    = op.join(FCDir,'{}_seed_{}_vFC.txt'.format(fileName,seedName))
     maskAll, maskWM_, maskCSF_, maskGM_ = makeTissueMasks(False)
     if not op.isfile(fcFile) or overwrite:
-        seedParcel, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(seed, None)
+        seedParcel, nRows, nCols, nSlices, nTRs, affine, TR, header = load_img(seed, maskAll)
         # retrieve volumetric processed data
         if config.isCifti or config.isGifti:
             prefix = '_'+config.session if  hasattr(config,'session')  else ''
