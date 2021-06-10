@@ -76,7 +76,6 @@ import fnmatch
 import re
 import os
 import glob
-from statsmodels.nonparametric.smoothers_lowess import lowess
 import seaborn as sns
 import nistats
 from nistats import design_matrix
