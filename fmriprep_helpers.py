@@ -499,7 +499,8 @@ def makeTissueMasks(overwrite=False,precomputed=False, maskThreshold=0.33):
                 gmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-GM_probseg.nii.gz')
                 csfFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_label-CSF_probseg.nii.gz')
             else: # format template_res-?
-                template = (config.space).split('_')[0]
+                #template = (config.space).split('_')[0]
+                template = config.space
                 wmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_space-'+template+'_label-WM_probseg.nii.gz')
                 gmFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_space-'+template+'_label-GM_probseg.nii.gz')
                 csfFilein =  op.join(config.DATADIR, 'fmriprep', config.subject, 'anat',config.subject+'_space-'+template+'_label-CSF_probseg.nii.gz')
