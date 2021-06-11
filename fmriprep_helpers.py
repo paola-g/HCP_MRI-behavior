@@ -77,8 +77,6 @@ import re
 import os
 import glob
 import seaborn as sns
-import nistats
-from nistats import design_matrix
 #from astropy.timeseries import LombScargle
 
 #----------------------------------
