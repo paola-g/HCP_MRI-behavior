@@ -2447,6 +2447,8 @@ def compute_seedFC(overwrite=False, seed=None, vFC=False, parcellationFile=None,
                     tokeep = np.setdiff1d(np.arange(ts.shape[0]),censored)
                     ts = ts[tokeep,:]
                     seedTS = seedTS[tokeep]
+            else:
+                ts = np.loadtxt(alltsFile)
             corrVec = np.zeros(ts.shape[1])
             for i in range(len(corrVec)):
                 corrVec[i] = np.squeeze(measure.fit_transform([np.vstack([seedTS, ts[:,i]]).T]))[0,1]
